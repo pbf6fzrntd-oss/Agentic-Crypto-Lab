@@ -198,15 +198,22 @@ def form_thesis_llm(ticker: str, recent_bars: pd.DataFrame) -> Thesis:
     further to the last CONTEXT_BARS bars before sending anything to the
     model — it never widens what it was given, only narrows it.
 
-    Reads the API key from the ANTHROPIC_API_KEY environment variable (via
-    the SDK's default credential resolution) — never hardcode a key here.
-    Raises on any failure (bad response shape, API error) rather than
-    silently falling back to a fabricated thesis; the caller (the Phase 2
-    runner) is responsible for not logging a decision when this raises.
+    Reads the API key from the ANTHROPIC_KEY_FOR_TRADING environment
+    variable — this project's dedicated key for Phase 2 trading calls,
+    kept separate from the SDK's default ANTHROPIC_API_KEY resolution so it
+    can't collide with a key set for some other purpose in the same
+    environment — never hardcode a key here. Raises on any failure (missing
+    key, bad response shape, API error) rather than silently falling back
+    to a fabricated thesis; the caller (the Phase 2 runner) is responsible
+    for not logging a decision when this raises.
     """
+    import os
+
     import anthropic
 
     if len(recent_bars) < MIN_BARS_FOR_LLM_THESIS:
+        # No API call needed (and none made) below this bar count, so don't
+        # require a key just to hit this early, keyless return.
         return Thesis(
             direction="FLAT",
             confidence=0.0,
@@ -217,10 +224,16 @@ def form_thesis_llm(ticker: str, recent_bars: pd.DataFrame) -> Thesis:
             source=f"LLM:{LLM_MODEL}",
         )
 
+    api_key = os.environ.get("ANTHROPIC_KEY_FOR_TRADING")
+    if not api_key:
+        raise RuntimeError(
+            "form_thesis_llm: ANTHROPIC_KEY_FOR_TRADING environment variable is not set"
+        )
+
     window = recent_bars.tail(CONTEXT_BARS)
     user_message = _build_user_message(ticker, window)
 
-    client = anthropic.Anthropic()  # resolves ANTHROPIC_API_KEY / OAuth profile
+    client = anthropic.Anthropic(api_key=api_key)
     response = client.messages.create(
         model=LLM_MODEL,
         max_tokens=1024,

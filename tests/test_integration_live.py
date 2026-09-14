@@ -7,8 +7,8 @@ use synthetic data and mocked clients only).
   fallback) against the real network. Free, but requires outbound network
   access to Yahoo Finance and/or Coinbase.
 - TestLiveThesisCall calls the real Anthropic API. Requires
-  ANTHROPIC_API_KEY (or another SDK-resolvable credential) and makes one
-  real, BILLED Claude API call.
+  ANTHROPIC_KEY_FOR_TRADING to be set and makes one real, BILLED Claude API
+  call.
 
 Both classes are skipped by default. Run explicitly with:
 
