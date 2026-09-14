@@ -34,9 +34,28 @@ def main() -> None:
     print("This run is NOT evidence. It validates the pipeline only.")
     print("=" * 70)
 
-    journal_path = CONFIG.journal_path
+    # Phase 1 gets its OWN journal (CONFIG.phase1_journal_path), entirely
+    # separate from CONFIG.journal_path -- the real Phase 2 evidence file.
+    # They used to be the same file, which meant every Phase 1 re-run
+    # (below, we unconditionally delete and regenerate this path -- Phase 1
+    # is a repeatable smoke test, not a log to preserve) silently destroyed
+    # Phase 2's real evidence too. See RESEARCH_SPEC.md's "Journal
+    # separation" note.
+    journal_path = CONFIG.phase1_journal_path
     Path(journal_path).parent.mkdir(parents=True, exist_ok=True)
+
     if Path(journal_path).exists():
+        # Belt-and-suspenders, in case CONFIG is ever misconfigured to
+        # point phase1_journal_path at a file with real evidence in it:
+        # refuse to delete rather than silently destroying real rows.
+        existing = load_journal(journal_path)
+        real_rows = [r for r in existing if r.get("data_source", "").startswith("REAL")]
+        if real_rows:
+            raise RuntimeError(
+                f"Refusing to delete {journal_path}: it contains {len(real_rows)} REAL-sourced "
+                "row(s). Phase 1 must never overwrite real Phase 2 evidence -- check "
+                "CONFIG.phase1_journal_path isn't accidentally pointed at the real journal."
+            )
         Path(journal_path).unlink()  # fresh journal each dry run
 
     # Use a fixed benchmark series too (synthetic "buy-and-hold" reference).

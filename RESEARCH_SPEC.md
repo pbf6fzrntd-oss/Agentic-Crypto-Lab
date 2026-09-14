@@ -146,6 +146,28 @@ relative to the evidence is auditable rather than asserted:
   any observed result, consistent with this project's position-sizing
   discipline.
 
+### Journal separation (2026-09-14)
+
+Phase 1 (`run_dry_run.py`) and Phase 2 (`run_paper_trading.py`) used to
+share a single journal file (`Config.journal_path`). That was a latent
+risk this document should have called out from the start: `run_dry_run.py`
+unconditionally deletes and regenerates its journal on every run (by
+design — Phase 1 is a repeatable smoke test, not a log worth preserving),
+and because both phases wrote to the same path, re-running Phase 1 at any
+point after Phase 2 had accumulated real evidence would have silently
+destroyed that evidence.
+
+Fixed by giving Phase 1 its own file, `Config.phase1_journal_path`
+(`output/phase1_dry_run_journal.jsonl`), entirely separate from
+`Config.journal_path` (`output/decision_journal.jsonl`), which is now
+Phase 2's real-evidence journal exclusively. The existing committed
+journal was split along its `data_source` field to migrate cleanly with
+no data loss: 788 `SYNTHETIC` rows moved to the new Phase 1 file, the 19
+existing `REAL:*` rows stayed in `decision_journal.jsonl`. `run_dry_run.py`
+also now refuses (raises, rather than silently deleting) if the file at
+`phase1_journal_path` ever contains a `REAL:*` row, as a second line of
+defense in case that path is ever misconfigured.
+
 ## What Would Prove This Wrong
 
 If any apparent profitability edge over buy-and-hold disappears once

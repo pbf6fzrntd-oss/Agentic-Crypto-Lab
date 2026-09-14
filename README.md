@@ -40,10 +40,23 @@ tests/
   test_pipeline.py        Phase 1 tests (no-lookahead, immutability, ordering)
   test_phase2.py           Phase 2 tests — fetch_ohlcv and form_thesis_llm
                            with the network/API layer mocked; no real calls
+  test_run_paper_trading.py  main()-level integration tests: the review pass
+                           never mixes SYNTHETIC/REAL data sources, and a
+                           re-run makes no duplicate (billed) LLM calls
+  test_journal_safety.py  atomic-write and concurrent-locking tests for
+                           journal.py
   test_integration_live.py  Phase 2 tests against REAL services — skipped
                            unless RUN_LIVE_INTEGRATION_TESTS=1; costs real
                            money when it calls the LLM
-output/           journal + summary CSV land here
+output/
+  decision_journal.jsonl        Phase 2's REAL-evidence journal ONLY —
+                                 the only file Phase 2's evidence count is
+                                 ever read from
+  phase1_dry_run_journal.jsonl  Phase 1's own journal — deleted and
+                                 regenerated on every dry-run invocation;
+                                 entirely separate from the file above (see
+                                 RESEARCH_SPEC.md's "Journal separation")
+  phase1_dry_run_summary.csv    Phase 1 smoke-test summary CSV
 ```
 
 ## Run it

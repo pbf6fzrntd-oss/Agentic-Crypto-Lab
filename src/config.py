@@ -69,7 +69,21 @@ class Config:
     # Output locations.
     data_dir: str = "data"
     output_dir: str = "output"
+
+    # The REAL-evidence journal: every row here comes from
+    # run_paper_trading.py (Phase 2) and is a data_source="REAL:*" row --
+    # see RESEARCH_SPEC.md. This is the only file Phase 2's evidence count
+    # is ever read from.
     journal_path: str = "output/decision_journal.jsonl"
+
+    # Phase 1's own, entirely separate journal (data_source="SYNTHETIC"
+    # only). run_dry_run.py deletes and regenerates this file on every run
+    # (Phase 1 is a repeatable, non-evidentiary smoke test, not a log to
+    # preserve) -- it used to share journal_path with Phase 2, which meant
+    # every Phase 1 re-run destroyed Phase 2's real evidence too. Split out
+    # on 2026-09-14; see RESEARCH_SPEC.md's "Journal separation" note.
+    phase1_journal_path: str = "output/phase1_dry_run_journal.jsonl"
+
     dry_run_summary_path: str = "output/phase1_dry_run_summary.csv"
 
 
