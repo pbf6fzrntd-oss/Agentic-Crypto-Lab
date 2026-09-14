@@ -45,7 +45,40 @@ after they occur. This is the same prospective-journal discipline the
 original SMA/ATR project adopted once its own backtest turned out fragile —
 here it's the *only* valid evidence, not a fallback.
 
-Phase 2 is not implemented yet. This repo currently builds Phase 1 only.
+**Phase 2 is now implemented** (`src/run_paper_trading.py`, real
+`fetch_ohlcv()` in `src/data.py`, real `form_thesis_llm()` in
+`src/thesis.py`). It has logged **zero** decisions and completed **zero**
+outcomes as of this writing — see "Reading Phase 2 output" below. Every
+Phase 1 number remains explicitly non-evidentiary; nothing from Phase 1
+carries over into the Phase 2 count.
+
+#### Reading Phase 2 output
+
+- Real evidence starts accumulating only from the moment
+  `run_paper_trading.py` is first actually run on a schedule. Zero
+  completed outcomes means zero evidence, not "evidence of no edge" — do
+  not read an early, small, or empty sample as a result either way.
+- The falsification bar (below) can only be checked once enough completed
+  outcomes exist to say anything statistically meaningful — a handful of
+  trades is not that bar.
+- **Benchmark caveat:** `run_paper_trading.py` computes each trade's
+  `excess_return` against an equal-weighted, real-data buy-and-hold basket
+  of the fixed universe (BTC-USD + ETH-USD), not literally "the same
+  instrument" — the pipeline's existing `excess_return` math (comparing the
+  same ticker's own price on its own entry/exit dates) would trivially
+  produce zero for every trade if the traded ticker were its own benchmark.
+  See the docstring on `_build_benchmark()` in `run_paper_trading.py`. This
+  was a judgment call made while implementing Phase 2, flagged to the
+  researcher rather than decided silently — revisit it if a stricter
+  per-instrument comparison is wanted; that would require changing
+  `workflow.run_review_step`'s frozen math, not just the runner.
+- **Data-fetch caveat:** `fetch_ohlcv()` was implemented and unit-tested
+  with mocked responses, but the sandbox it was built in had no outbound
+  network access to any market-data provider tried (Yahoo Finance,
+  Coinbase, Binance, Kraken all returned policy-denied). It has not yet
+  been exercised against a real response — run
+  `RUN_LIVE_INTEGRATION_TESTS=1 python3 -m unittest tests/test_integration_live.py -v`
+  once from an environment with real network access before relying on it.
 
 ## Frozen Parameters (Phase 1)
 

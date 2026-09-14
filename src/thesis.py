@@ -7,13 +7,19 @@ paper trading) the only valid evidence-gathering phase — see
 RESEARCH_SPEC.md for why a historical backtest of this step can't be
 trusted.
 
-This module defines the interface and a STUB implementation so Phase 1 can
-exercise the full pipeline without any LLM access (this sandbox has no
-credentials to call one). Before Phase 2, replace `stub_form_thesis` with a
-real call to an LLM (via `form_thesis_fn` in workflow.py) that:
-  - is given only data available as of the decision timestamp
-  - returns a structured view + reasoning
-  - is logged verbatim, before any outcome is known
+Phase 1 used `stub_form_thesis`, a deterministic, non-LLM momentum
+heuristic, to exercise the full pipeline without any LLM access. Phase 2
+adds `form_thesis_llm` below — a real call to Claude — which is the actual
+subject of this project's research question.
+
+Model and context size were asked of, and confirmed by, the researcher
+before this was implemented (see RESEARCH_SPEC.md / the commit that added
+this function): model `claude-sonnet-5`, context = last CONTEXT_BARS (60)
+daily bars plus a few derived stats. Both are module-level constants below,
+not CONFIG fields — CONFIG in config.py holds the *frozen* Phase 1
+parameters (universe, sizing, costs, workflow order) that this project
+commits not to tune against results; the thesis model/context choice is an
+LLM-call setting, not one of those frozen research parameters.
 """
 
 from __future__ import annotations
@@ -21,7 +27,63 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+import pandas as pd
+
 Direction = Literal["LONG", "FLAT"]
+
+# --- Phase 2 LLM thesis settings ---
+LLM_MODEL = "claude-sonnet-5"
+CONTEXT_BARS = 60  # bars of history shown to the model per call
+MIN_BARS_FOR_LLM_THESIS = 10  # below this, there's not enough signal to ask
+
+_SYSTEM_PROMPT = """\
+You are the thesis-formation step in a mechanical research pipeline \
+studying whether a structured agent decision workflow beats passive \
+buy-and-hold on crypto, once volatility and costs are accounted for. This \
+is Phase 2 of that study: forward paper trading. No real orders are ever \
+placed anywhere in this system; this is a hypothetical, research-only \
+exercise and nothing you say is investment advice.
+
+You will be shown recent daily OHLCV price data for one crypto asset, \
+ending at the most recent bar you may see. You have no visibility into \
+anything after it, and none will ever be given to you before its date has \
+passed. Form a short-term (about five trading days) directional view based \
+ONLY on the data provided in this message.
+
+Rules:
+- Do not use any knowledge of this asset's actual historical or future \
+price that you may recall from training. Reason only from the numbers \
+given to you here — if your training data disagrees with these numbers, \
+the numbers given here are what actually happened and what you must use.
+- Your reasoning must be a few plain-language sentences explaining what in \
+the given data drove your view. It will be logged verbatim as the research \
+record for this decision, before any outcome is known.
+- confidence is your own self-assessed probability (0.0-1.0) that the \
+direction you name will be correct over the next ~5 trading days. Vary it \
+honestly based on how strong or weak the signal looks to you — do not \
+default to a fixed number.
+- direction is LONG (bullish) or FLAT (no edge, bearish, or genuinely \
+uncertain). There is no SHORT in this pipeline.
+
+Call the record_thesis tool with your answer. Do not include any other \
+text in your response.
+"""
+
+_THESIS_TOOL = {
+    "name": "record_thesis",
+    "description": "Record your directional thesis for this asset as of the given date.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "direction": {"type": "string", "enum": ["LONG", "FLAT"]},
+            "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+            "reasoning": {"type": "string"},
+        },
+        "required": ["direction", "confidence", "reasoning"],
+        "additionalProperties": False,
+    },
+    "strict": True,
+}
 
 
 @dataclass(frozen=True)
@@ -71,3 +133,117 @@ def stub_form_thesis(ticker: str, recent_bars) -> Thesis:
         )
 
     return Thesis(direction=direction, confidence=confidence, reasoning=reasoning, source="STUB")
+
+
+def _derived_stats(window: pd.DataFrame) -> dict:
+    """A few cheap-to-compute descriptive stats over the given window."""
+    import numpy as np  # local import; only this helper needs numpy
+
+    close = window["Close"]
+    daily_log_returns = np.log(close / close.shift(1)).dropna()
+    window_return = close.iloc[-1] / close.iloc[0] - 1
+    realized_vol = daily_log_returns.std() if len(daily_log_returns) > 1 else float("nan")
+    window_high = window["High"].max()
+    window_low = window["Low"].min()
+    last_close = close.iloc[-1]
+    return {
+        "window_return": window_return,
+        "realized_daily_vol": realized_vol,
+        "dist_from_high": last_close / window_high - 1,
+        "dist_from_low": last_close / window_low - 1,
+    }
+
+
+def _build_user_message(ticker: str, window: pd.DataFrame) -> str:
+    stats = _derived_stats(window)
+    as_of_date = window.index[-1].date()
+
+    lines = [
+        f"Asset: {ticker}",
+        f"Data through: {as_of_date} (most recent bar available; nothing after this date exists in this call)",
+        f"Bars: last {len(window)} daily bars, oldest to newest",
+        "",
+        "Date,Open,High,Low,Close,Volume",
+    ]
+    for date, row in window.iterrows():
+        lines.append(
+            f"{date.date()},{row['Open']:.2f},{row['High']:.2f},"
+            f"{row['Low']:.2f},{row['Close']:.2f},{row['Volume']:.0f}"
+        )
+    lines += [
+        "",
+        "Derived stats over this window:",
+        f"- {len(window)}-bar return: {stats['window_return']:.2%}",
+        f"- Realized daily volatility (stdev of daily log returns): {stats['realized_daily_vol']:.2%}",
+        f"- Distance from window high: {stats['dist_from_high']:.2%}",
+        f"- Distance from window low: {stats['dist_from_low']:.2%}",
+    ]
+    return "\n".join(lines)
+
+
+def form_thesis_llm(ticker: str, recent_bars: pd.DataFrame) -> Thesis:
+    """
+    Real Phase 2 thesis step: a live call to Claude.
+
+    `recent_bars` must already be no-lookahead-safe (the caller,
+    `workflow.run_signal_step`, only ever passes bars up to and including
+    the decision date via `gather_data()`). This function trims that
+    further to the last CONTEXT_BARS bars before sending anything to the
+    model — it never widens what it was given, only narrows it.
+
+    Reads the API key from the ANTHROPIC_API_KEY environment variable (via
+    the SDK's default credential resolution) — never hardcode a key here.
+    Raises on any failure (bad response shape, API error) rather than
+    silently falling back to a fabricated thesis; the caller (the Phase 2
+    runner) is responsible for not logging a decision when this raises.
+    """
+    import anthropic
+
+    if len(recent_bars) < MIN_BARS_FOR_LLM_THESIS:
+        return Thesis(
+            direction="FLAT",
+            confidence=0.0,
+            reasoning=(
+                f"Insufficient history ({len(recent_bars)} bars, need "
+                f"{MIN_BARS_FOR_LLM_THESIS}) to ask for a thesis yet."
+            ),
+            source=f"LLM:{LLM_MODEL}",
+        )
+
+    window = recent_bars.tail(CONTEXT_BARS)
+    user_message = _build_user_message(ticker, window)
+
+    client = anthropic.Anthropic()  # resolves ANTHROPIC_API_KEY / OAuth profile
+    response = client.messages.create(
+        model=LLM_MODEL,
+        max_tokens=1024,
+        # This is a short directional judgment call over ~60 price bars, not
+        # a hard multi-step reasoning problem -- low effort keeps thinking
+        # (on by default for claude-sonnet-5) bounded, which matters for
+        # cost on a call this project makes routinely. Raise this if the
+        # thesis quality looks shallow in practice.
+        output_config={"effort": "low"},
+        system=[{"type": "text", "text": _SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
+        tools=[_THESIS_TOOL],
+        tool_choice={"type": "tool", "name": "record_thesis"},
+        messages=[{"role": "user", "content": user_message}],
+    )
+
+    tool_call = next((b for b in response.content if b.type == "tool_use"), None)
+    if tool_call is None:
+        raise RuntimeError(
+            f"form_thesis_llm({ticker}): model response had no tool_use block "
+            f"(stop_reason={response.stop_reason!r})"
+        )
+
+    data = tool_call.input  # already-parsed dict; strict:true guarantees the schema
+    direction = data["direction"]
+    if direction not in ("LONG", "FLAT"):
+        raise RuntimeError(f"form_thesis_llm({ticker}): unexpected direction {direction!r}")
+
+    return Thesis(
+        direction=direction,
+        confidence=float(data["confidence"]),
+        reasoning=str(data["reasoning"]),
+        source=f"LLM:{LLM_MODEL}",
+    )

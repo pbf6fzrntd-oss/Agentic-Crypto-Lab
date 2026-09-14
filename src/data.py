@@ -1,22 +1,36 @@
 """
-Data layer for Phase 1.
+Data layer.
 
-IMPORTANT — READ THIS:
-This sandbox environment has no outbound network access to market data
-providers (Yahoo Finance, Binance, etc. are blocked by organization egress
-policy). `fetch_ohlcv()` below is written as the real interface you'd wire a
-live data source into, but it currently raises NotImplementedError.
+Phase 1 used only `generate_synthetic_ohlcv()` — clearly-labeled, seeded,
+fake price data — because this sandbox had no outbound network access to
+market data providers, and because Phase 1's entire purpose was to prove
+the pipeline's plumbing (ordering, logging immutability, no-lookahead,
+benchmark math), which does not require real prices. Every output produced
+from synthetic data is tagged `data_source="SYNTHETIC"` so it can never be
+mistaken for a real result.
 
-For the Phase 1 mechanical dry run, we use `generate_synthetic_ohlcv()`
-instead — clearly-labeled, seeded, fake price data. This is fine because
-Phase 1's entire purpose is to prove the pipeline's plumbing (ordering,
-logging immutability, no-lookahead, benchmark math), which does not require
-real prices. Every output produced from synthetic data is tagged
-`data_source="SYNTHETIC"` so it can never be mistaken for a real result.
+Phase 2 (forward paper trading) needs real prices, so `fetch_ohlcv()` below
+is now implemented:
+  - primary: yfinance (`Ticker.history`) — Yahoo Finance serves daily crypto
+    OHLCV for BTC-USD/ETH-USD-style tickers with no API key, and "1d" (this
+    project's only configured bar_interval) is fully supported.
+  - fallback: ccxt against Coinbase's public market-data endpoints (also no
+    API key) — used only if the yfinance call raises or returns no rows.
+Every row returned is tagged `data_source` with which path actually served
+it (e.g. "REAL:yfinance" or "REAL:ccxt:coinbase"), the same way Phase 1
+tagged everything "SYNTHETIC" — so a Phase 2 journal row can always be
+traced back to where its price came from.
 
-Before Phase 2 (forward paper trading, the actual evidence-gathering phase),
-`fetch_ohlcv()` must be implemented against a real source (e.g. yfinance or
-an exchange API via ccxt) from an environment that can reach it.
+KNOWN LIMITATION (as of the environment this was implemented in): the sandbox
+session used to write this code has an organization egress policy that
+blocks every market-data host tried while implementing this — Yahoo
+Finance's endpoints and Coinbase's, Binance's, and Kraken's public APIs all
+returned a 403 policy denial at the proxy layer. `fetch_ohlcv()` has NOT
+been exercised against live data as a result — it is implemented from each
+library's documented interface, covered by unit tests that mock the
+HTTP/client layer, but not proven against a real response. Run it once
+manually from an environment with real network access and sanity-check the
+output before trusting it in the Phase 2 runner.
 """
 
 from __future__ import annotations
@@ -27,16 +41,97 @@ import pandas as pd
 
 REQUIRED_COLUMNS = ["Open", "High", "Low", "Close", "Volume"]
 
+# Interval strings this project uses (config.py `bar_interval`) mapped to
+# each provider's own interval/timeframe spelling. Both happen to already
+# match for "1d"; the maps exist so a future intraday interval (e.g. "1h")
+# is a one-line addition here, not a rewrite of fetch_ohlcv.
+_YFINANCE_INTERVAL = {"1d": "1d", "1h": "1h"}
+_CCXT_TIMEFRAME = {"1d": "1d", "1h": "1h"}
+
 
 def fetch_ohlcv(ticker: str, lookback_days: int, interval: str) -> pd.DataFrame:
-    """Real data fetch — not available in this sandbox. Wire this up to a
-    live source (yfinance, ccxt, etc.) before running Phase 2."""
-    raise NotImplementedError(
-        "No outbound network access to market data providers in this "
-        "environment. Use generate_synthetic_ohlcv() for the Phase 1 dry "
-        "run, and implement this function against a real data source "
-        "before any Phase 2 (paper trading) run."
+    """
+    Fetch real OHLCV bars for `ticker` (e.g. "BTC-USD"), most recent
+    `lookback_days` bars, at `interval`. Tries yfinance first, falls back to
+    ccxt/Coinbase on failure. Raises RuntimeError if both fail — callers
+    must not silently substitute synthetic data for a failed real fetch.
+    """
+    try:
+        df = _fetch_ohlcv_yfinance(ticker, lookback_days, interval)
+        if df is not None and not df.empty:
+            return df
+        last_error = RuntimeError(f"yfinance returned no rows for {ticker}")
+    except Exception as exc:  # noqa: BLE001 — any failure falls through to ccxt
+        last_error = exc
+
+    try:
+        df = _fetch_ohlcv_ccxt(ticker, lookback_days, interval)
+        if df is not None and not df.empty:
+            return df
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(
+            f"fetch_ohlcv({ticker!r}): both yfinance and ccxt fallback failed. "
+            f"yfinance error: {last_error!r}; ccxt error: {exc!r}"
+        ) from exc
+
+    raise RuntimeError(
+        f"fetch_ohlcv({ticker!r}): yfinance returned no data and ccxt "
+        f"fallback also returned no data. yfinance error: {last_error!r}"
     )
+
+
+def _fetch_ohlcv_yfinance(ticker: str, lookback_days: int, interval: str) -> pd.DataFrame:
+    import yfinance as yf
+
+    yf_interval = _YFINANCE_INTERVAL.get(interval, interval)
+
+    # Crypto trades every calendar day, not just business days, so fetch a
+    # calendar-day window with a buffer for any provider gaps.
+    end = pd.Timestamp.now(tz="UTC").normalize() + pd.Timedelta(days=1)
+    start = end - pd.Timedelta(days=int(lookback_days * 1.2) + 10)
+
+    hist = yf.Ticker(ticker).history(
+        start=start.date().isoformat(),
+        end=end.date().isoformat(),
+        interval=yf_interval,
+        auto_adjust=False,
+    )
+    if hist is None or hist.empty:
+        return hist
+
+    hist = hist[REQUIRED_COLUMNS].tail(lookback_days).copy()
+    hist.index = pd.to_datetime(hist.index)
+    if hist.index.tz is not None:
+        hist.index = hist.index.tz_localize(None)
+    hist.index.name = "Date"
+    hist.attrs["ticker"] = ticker
+    hist.attrs["data_source"] = "REAL:yfinance"
+    return hist
+
+
+def _fetch_ohlcv_ccxt(ticker: str, lookback_days: int, interval: str) -> pd.DataFrame:
+    import ccxt
+
+    timeframe = _CCXT_TIMEFRAME.get(interval, interval)
+    # ccxt's unified symbol format is "BASE/QUOTE"; this project's tickers
+    # are "BASE-QUOTE" (e.g. "BTC-USD").
+    symbol = ticker.replace("-", "/")
+
+    exchange = ccxt.coinbase()
+    since = exchange.parse8601(
+        (pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=int(lookback_days * 1.2) + 10))
+        .strftime("%Y-%m-%dT%H:%M:%SZ")
+    )
+    bars = exchange.fetch_ohlcv(symbol, timeframe=timeframe, since=since, limit=lookback_days + 20)
+    if not bars:
+        return pd.DataFrame(columns=REQUIRED_COLUMNS)
+
+    df = pd.DataFrame(bars, columns=["ts", "Open", "High", "Low", "Close", "Volume"])
+    df["Date"] = pd.to_datetime(df["ts"], unit="ms")
+    df = df.set_index("Date")[REQUIRED_COLUMNS].tail(lookback_days)
+    df.attrs["ticker"] = ticker
+    df.attrs["data_source"] = "REAL:ccxt:coinbase"
+    return df
 
 
 def generate_synthetic_ohlcv(
