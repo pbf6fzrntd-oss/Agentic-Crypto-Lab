@@ -54,7 +54,7 @@ python3 -m unittest discover -s tests -v   # all mocked/synthetic tests, no cost
 
 python3 -m src.run_dry_run                 # Phase 1 — synthetic data, stub thesis
 
-export ANTHROPIC_API_KEY=...               # required for Phase 2
+export ANTHROPIC_KEY_FOR_TRADING=...       # required for Phase 2
 python3 -m src.run_paper_trading           # Phase 2 — real data, real LLM call, one pass
 ```
 

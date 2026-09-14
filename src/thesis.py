@@ -24,6 +24,7 @@ LLM-call setting, not one of those frozen research parameters.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Literal
 
@@ -191,11 +192,15 @@ def form_thesis_llm(ticker: str, recent_bars: pd.DataFrame) -> Thesis:
     further to the last CONTEXT_BARS bars before sending anything to the
     model — it never widens what it was given, only narrows it.
 
-    Reads the API key from the ANTHROPIC_API_KEY environment variable (via
-    the SDK's default credential resolution) — never hardcode a key here.
-    Raises on any failure (bad response shape, API error) rather than
-    silently falling back to a fabricated thesis; the caller (the Phase 2
-    runner) is responsible for not logging a decision when this raises.
+    Reads the API key from the ANTHROPIC_KEY_FOR_TRADING environment
+    variable — never hardcode a key here. (This project uses that name
+    instead of the SDK's default ANTHROPIC_API_KEY because the latter is
+    reserved by the Claude Code cloud environment for its own credential
+    injection and can't be set by the user there.)
+    Raises on any failure (bad response shape, API error, or the env var
+    being unset) rather than silently falling back to a fabricated thesis;
+    the caller (the Phase 2 runner) is responsible for not logging a
+    decision when this raises.
     """
     import anthropic
 
@@ -213,7 +218,13 @@ def form_thesis_llm(ticker: str, recent_bars: pd.DataFrame) -> Thesis:
     window = recent_bars.tail(CONTEXT_BARS)
     user_message = _build_user_message(ticker, window)
 
-    client = anthropic.Anthropic()  # resolves ANTHROPIC_API_KEY / OAuth profile
+    api_key = os.environ.get("ANTHROPIC_KEY_FOR_TRADING")
+    if not api_key:
+        raise RuntimeError(
+            "ANTHROPIC_KEY_FOR_TRADING is not set. Set it to a valid "
+            "Anthropic API key before calling form_thesis_llm()."
+        )
+    client = anthropic.Anthropic(api_key=api_key)
     response = client.messages.create(
         model=LLM_MODEL,
         max_tokens=1024,
