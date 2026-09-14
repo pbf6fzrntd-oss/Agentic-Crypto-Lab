@@ -67,15 +67,26 @@ def run_signal_step(
     run_timestamp: Optional[str] = None,
     current_gross_exposure: float = 0.0,
     max_gross_exposure_fraction: float = 1.0,
+    write_to_journal: bool = True,
 ) -> journal_mod.JournalRecord:
     """
     Execute steps 1-5 for a single ticker at a single decision date, and
-    append the result to the journal. Returns the record that was logged.
+    (by default) append the result to the journal. Returns the record.
 
     `current_gross_exposure` / `max_gross_exposure_fraction` pass straight
     through to risk_check() -- see its docstring. Both default to values
     that make the portfolio-level cap a no-op, so this stays backward
     compatible with every existing call site.
+
+    `write_to_journal=False` skips step 5's disk write and just returns the
+    record -- for a caller logging many records from one process invocation
+    (Phase 1's dry run) that wants to batch them into one
+    journal.append_decisions() call instead of one append_decision() call
+    per record (each of which is a full read+rewrite+fsync -- see
+    append_decisions()'s docstring for why that matters at volume). Step 5
+    ("log") still logically happens for every record either way; this only
+    changes whether THIS call performs its own disk write immediately, not
+    whether the record ever gets logged.
     """
     # 1. gather_data — enforce no-lookahead
     visible = gather_data(full_history, as_of_date)
@@ -126,7 +137,8 @@ def run_signal_step(
     )
 
     # 5. log — append-only, refuses duplicates
-    journal_mod.append_decision(journal_path, record)
+    if write_to_journal:
+        journal_mod.append_decision(journal_path, record)
     return record
 
 
@@ -138,11 +150,18 @@ def run_review_step(
     taker_fee_bps: float,
     slippage_bps: float,
     benchmark_history: pd.DataFrame,
+    write_to_journal: bool = True,
 ) -> Optional[dict]:
     """
     6. review — if the holding period has elapsed since entry, compute and
-    append the realized outcome. Returns the updated record dict, or None if
-    the review wasn't applicable/ready yet.
+    (by default) append the realized outcome. Returns the updated record
+    dict, or None if the review wasn't applicable/ready yet.
+
+    `write_to_journal=False` skips the disk write and just returns the
+    updated dict -- same batching rationale as run_signal_step's, for a
+    caller (Phase 1's dry run) that wants to collect many outcomes and
+    apply them in one journal.append_outcomes() call. See that function's
+    docstring.
     """
     if record["action"] != "BUY" or record["outcome_status"] == "COMPLETE":
         return None
@@ -184,16 +203,17 @@ def run_review_step(
     round_trip_cost = 2 * (taker_fee_bps + slippage_bps) / 10_000
     net_of_cost_return = stock_return - round_trip_cost
 
-    journal_mod.append_outcome(
-        journal_path,
-        record_id=record["record_id"],
-        exit_date=str(exit_date.date()),
-        exit_price=exit_price,
-        stock_return=stock_return,
-        benchmark_return=benchmark_return,
-        excess_return=excess_return,
-        net_of_cost_return=net_of_cost_return,
-    )
+    if write_to_journal:
+        journal_mod.append_outcome(
+            journal_path,
+            record_id=record["record_id"],
+            exit_date=str(exit_date.date()),
+            exit_price=exit_price,
+            stock_return=stock_return,
+            benchmark_return=benchmark_return,
+            excess_return=excess_return,
+            net_of_cost_return=net_of_cost_return,
+        )
 
     record = dict(record)
     record.update(

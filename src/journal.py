@@ -143,6 +143,42 @@ def append_decision(path: str, record: JournalRecord) -> None:
         _write_all(path, rows)
 
 
+def append_decisions(path: str, records: list[JournalRecord]) -> None:
+    """
+    Append multiple new decision records in ONE locked read-modify-write
+    cycle, instead of one append_decision() call per record.
+
+    append_decision() is O(current file size) per call (full read + full
+    rewrite + fsync), so calling it once per record in a tight loop is
+    O(n^2) overall -- fine for Phase 2 (a handful of calls per day), but
+    Phase 1's dry run logs thousands of records in a single invocation and
+    that quadratic cost (compounded by the per-call fsync+flock this
+    project added for write safety) made a full run take minutes instead
+    of seconds. Callers with many records to log at once (run_dry_run.py)
+    should collect them and call this once instead.
+
+    Writes nothing if ANY record_id in the batch collides with an existing
+    row or with another record in the same batch -- same all-or-nothing
+    refusal as append_decision(), just checked for the whole batch upfront.
+    """
+    if not records:
+        return
+    new_ids = [r.record_id for r in records]
+    seen: set[str] = set()
+    dupes_in_batch = {i for i in new_ids if i in seen or seen.add(i)}  # type: ignore[func-returns-value]
+    if dupes_in_batch:
+        raise ValueError(f"Duplicate record_id(s) within batch, refusing to log any of it: {dupes_in_batch}")
+
+    with _locked(path):
+        rows = _read_all(path)
+        existing_ids = {r["record_id"] for r in rows}
+        collisions = existing_ids & set(new_ids)
+        if collisions:
+            raise ValueError(f"Duplicate record_id(s), refusing to log again: {collisions}")
+        rows.extend(asdict(r) for r in records)
+        _write_all(path, rows)
+
+
 def append_outcome(
     path: str,
     record_id: str,
@@ -174,6 +210,50 @@ def append_outcome(
                 _write_all(path, rows)
                 return
         raise ValueError(f"No record found with record_id={record_id}")
+
+
+def append_outcomes(path: str, outcomes: list[dict]) -> None:
+    """
+    Append multiple realized outcomes in ONE locked read-modify-write
+    cycle -- same batching rationale as append_decisions(), for the same
+    reason (Phase 1's review pass can complete thousands of outcomes in a
+    single run). Each entry in `outcomes` is a dict with keys: record_id,
+    exit_date, exit_price, stock_return, benchmark_return, excess_return,
+    net_of_cost_return (extra keys, e.g. the rest of a full journal row
+    dict, are ignored).
+
+    Validates every entry BEFORE writing any of them: raises (writing
+    nothing) if any record_id is missing, already COMPLETE, or appears
+    more than once in this batch -- same all-or-nothing guarantee as
+    append_outcome() for a single record.
+    """
+    if not outcomes:
+        return
+    ids = [o["record_id"] for o in outcomes]
+    if len(ids) != len(set(ids)):
+        seen: set[str] = set()
+        dupes = {i for i in ids if i in seen or seen.add(i)}  # type: ignore[func-returns-value]
+        raise ValueError(f"Duplicate record_id(s) within outcomes batch, refusing to log any of it: {dupes}")
+
+    with _locked(path):
+        rows = _read_all(path)
+        by_id = {r["record_id"]: r for r in rows}
+        for o in outcomes:
+            row = by_id.get(o["record_id"])
+            if row is None:
+                raise ValueError(f"No record found with record_id={o['record_id']}")
+            if row["outcome_status"] == "COMPLETE":
+                raise ValueError(f"Record {o['record_id']} already has a completed outcome; refusing to overwrite.")
+        for o in outcomes:
+            row = by_id[o["record_id"]]
+            row["outcome_status"] = "COMPLETE"
+            row["exit_date"] = o["exit_date"]
+            row["exit_price"] = o["exit_price"]
+            row["stock_return"] = o["stock_return"]
+            row["benchmark_return"] = o["benchmark_return"]
+            row["excess_return"] = o["excess_return"]
+            row["net_of_cost_return"] = o["net_of_cost_return"]
+        _write_all(path, rows)
 
 
 def load_journal(path: str) -> list[dict]:

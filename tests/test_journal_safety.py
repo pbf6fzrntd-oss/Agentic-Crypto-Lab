@@ -27,7 +27,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src import journal as journal_mod
-from src.journal import JournalRecord, append_decision, load_journal
+from src.journal import JournalRecord, append_decision, append_decisions, append_outcomes, load_journal
 
 
 def _record(record_id: str) -> JournalRecord:
@@ -141,6 +141,78 @@ class TestLocking(unittest.TestCase):
         self.assertEqual(len(lines), n)
         for line in lines:
             json.loads(line)  # each line must parse on its own -- no interleaved partial rows
+
+
+class TestBulkAppend(unittest.TestCase):
+    """
+    append_decisions() / append_outcomes() -- batched writes added so Phase
+    1's dry run (thousands of records in one invocation) isn't one
+    lock+read+rewrite+fsync cycle PER record. Same correctness guarantees
+    as the single-record functions, just checked/applied as one batch.
+    """
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.path = os.path.join(self.tmpdir.name, "journal.jsonl")
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def test_batch_of_decisions_all_land_in_one_write(self):
+        records = [_record(f"r{i}") for i in range(50)]
+        append_decisions(self.path, records)
+        rows = load_journal(self.path)
+        self.assertEqual(len(rows), 50)
+        self.assertEqual({r["record_id"] for r in rows}, {f"r{i}" for i in range(50)})
+
+    def test_empty_batch_is_a_no_op(self):
+        append_decisions(self.path, [])
+        self.assertFalse(os.path.exists(self.path))
+
+    def test_batch_with_internal_duplicate_writes_nothing(self):
+        records = [_record("dup"), _record("dup")]
+        with self.assertRaises(ValueError):
+            append_decisions(self.path, records)
+        self.assertFalse(os.path.exists(self.path))
+
+    def test_batch_colliding_with_existing_row_writes_nothing_new(self):
+        append_decision(self.path, _record("existing"))
+        with self.assertRaises(ValueError):
+            append_decisions(self.path, [_record("new1"), _record("existing")])
+        # Neither "new1" nor a second "existing" was written -- all-or-nothing.
+        rows = load_journal(self.path)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["record_id"], "existing")
+
+    def test_batch_of_outcomes_all_apply_in_one_write(self):
+        records = [_record(f"o{i}") for i in range(20)]
+        append_decisions(self.path, records)
+        outcomes = [
+            {
+                "record_id": f"o{i}", "exit_date": "2026-01-10", "exit_price": 110.0 + i,
+                "stock_return": 0.1, "benchmark_return": 0.05, "excess_return": 0.05,
+                "net_of_cost_return": 0.097,
+            }
+            for i in range(20)
+        ]
+        append_outcomes(self.path, outcomes)
+        rows = load_journal(self.path)
+        self.assertTrue(all(r["outcome_status"] == "COMPLETE" for r in rows))
+        self.assertEqual({r["exit_price"] for r in rows}, {110.0 + i for i in range(20)})
+
+    def test_outcomes_batch_referencing_missing_record_writes_nothing(self):
+        append_decisions(self.path, [_record("real1")])
+        before = load_journal(self.path)
+        with self.assertRaises(ValueError):
+            append_outcomes(self.path, [
+                {"record_id": "real1", "exit_date": "2026-01-10", "exit_price": 110.0,
+                 "stock_return": 0.1, "benchmark_return": 0.05, "excess_return": 0.05, "net_of_cost_return": 0.097},
+                {"record_id": "ghost", "exit_date": "2026-01-10", "exit_price": 1.0,
+                 "stock_return": 0.0, "benchmark_return": 0.0, "excess_return": 0.0, "net_of_cost_return": 0.0},
+            ])
+        # "real1" must NOT have been partially updated -- validated before any write.
+        after = load_journal(self.path)
+        self.assertEqual(after, before)
 
 
 if __name__ == "__main__":

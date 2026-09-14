@@ -206,10 +206,18 @@ def form_thesis_llm(ticker: str, recent_bars: pd.DataFrame) -> Thesis:
     key, bad response shape, API error) rather than silently falling back
     to a fabricated thesis; the caller (the Phase 2 runner) is responsible
     for not logging a decision when this raises.
+
+    Cost circuit breaker: refuses to make the call (raises, before ever
+    touching the network) once today's cumulative estimated spend has
+    reached Config.max_daily_cost_usd -- see src/cost_tracking.py. Every
+    successful call is logged there afterward regardless of outcome.
     """
     import os
 
     import anthropic
+
+    from .config import CONFIG
+    from .cost_tracking import cumulative_cost_today, log_llm_call
 
     if len(recent_bars) < MIN_BARS_FOR_LLM_THESIS:
         # No API call needed (and none made) below this bar count, so don't
@@ -230,6 +238,14 @@ def form_thesis_llm(ticker: str, recent_bars: pd.DataFrame) -> Thesis:
             "form_thesis_llm: ANTHROPIC_KEY_FOR_TRADING environment variable is not set"
         )
 
+    spent_today = cumulative_cost_today(CONFIG.cost_log_path)
+    if spent_today >= CONFIG.max_daily_cost_usd:
+        raise RuntimeError(
+            f"form_thesis_llm({ticker}): daily cost cap reached (${spent_today:.4f} spent >= "
+            f"${CONFIG.max_daily_cost_usd:.2f} max_daily_cost_usd) -- refusing to make another "
+            "billed Anthropic API call today. Raise Config.max_daily_cost_usd if this is expected."
+        )
+
     window = recent_bars.tail(CONTEXT_BARS)
     user_message = _build_user_message(ticker, window)
 
@@ -248,6 +264,10 @@ def form_thesis_llm(ticker: str, recent_bars: pd.DataFrame) -> Thesis:
         tool_choice={"type": "tool", "name": "record_thesis"},
         messages=[{"role": "user", "content": user_message}],
     )
+    # Log the call (and what it cost) regardless of what happens below --
+    # it was billed either way, and the circuit breaker above needs an
+    # accurate running total even if this response turns out unparseable.
+    log_llm_call(CONFIG.cost_log_path, LLM_MODEL, ticker, response.usage)
 
     tool_call = next((b for b in response.content if b.type == "tool_use"), None)
     if tool_call is None:

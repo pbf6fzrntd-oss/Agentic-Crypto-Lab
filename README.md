@@ -27,8 +27,14 @@ src/
   thesis.py            step 2 "form_thesis": stub_form_thesis (Phase 1,
                         non-LLM heuristic) + form_thesis_llm (Phase 2 —
                         real claude-sonnet-5 call)
-  risk.py              step 3 "risk_check" — fixed position-sizing rule
+  risk.py              step 3 "risk_check" — fixed position-sizing rule +
+                        a portfolio-level gross-exposure cap
   journal.py           step 5/6 — append-only, immutable decision journal
+                        (atomic writes, locked against concurrent runs);
+                        append_decisions()/append_outcomes() are batched
+                        variants for a caller logging many records at once
+  cost_tracking.py     cost telemetry + hard daily-spend circuit breaker
+                        for form_thesis_llm()'s real API calls
   workflow.py           orchestrates the frozen 6-step sequence (shared by
                         both phases — never changed between them)
   run_dry_run.py        Phase 1 entry point
@@ -43,8 +49,12 @@ tests/
   test_run_paper_trading.py  main()-level integration tests: the review pass
                            never mixes SYNTHETIC/REAL data sources, and a
                            re-run makes no duplicate (billed) LLM calls
-  test_journal_safety.py  atomic-write and concurrent-locking tests for
-                           journal.py
+  test_run_dry_run.py     Phase 1's journal-separation guard: never touches
+                           a real-evidence journal at a different path
+  test_journal_safety.py  atomic-write, concurrent-locking, and batched-
+                           append tests for journal.py
+  test_cost_tracking.py   cost-estimation and daily-cap tests for
+                           cost_tracking.py
   test_integration_live.py  Phase 2 tests against REAL services — skipped
                            unless RUN_LIVE_INTEGRATION_TESTS=1; costs real
                            money when it calls the LLM
@@ -57,6 +67,9 @@ output/
                                  entirely separate from the file above (see
                                  RESEARCH_SPEC.md's "Journal separation")
   phase1_dry_run_summary.csv    Phase 1 smoke-test summary CSV
+  llm_cost_log.jsonl            one row per real form_thesis_llm() call —
+                                 tokens used + estimated USD cost; read by
+                                 cost_tracking.py to enforce the daily cap
 ```
 
 ## Run it
@@ -73,21 +86,27 @@ python3 -m src.run_paper_trading           # Phase 2 — real data, real LLM cal
 
 ## Known limitations
 
-- **Phase 2 data fetch is implemented but unexercised against live data.**
-  `fetch_ohlcv()` (yfinance, with a ccxt/Coinbase fallback) was built and
-  unit-tested with mocked responses in a sandbox whose outbound network
-  access was blocked by organization egress policy for every market-data
-  host tried (Yahoo Finance, Coinbase, Binance, Kraken). Run it once from
-  an environment with real network access — and run
+- **Phase 2 data fetch has since been exercised against live data
+  (2026-09-14) and works.** The note that used to be here said this was
+  unproven because the original build sandbox's egress policy blocked
+  every market-data host tried. That was environment-specific, not a
+  property of the code: run from an environment with real network access
+  (as this project now has been, repeatedly), `fetch_ohlcv()` correctly
+  fetches real BTC-USD/ETH-USD/etc. data via yfinance. If you're running
+  from a *new* restricted sandbox, re-verify with
   `RUN_LIVE_INTEGRATION_TESTS=1 python3 -m unittest tests/test_integration_live.py -v`
-  — before trusting it on a schedule. If a validation check in
-  `validate_ohlcv()` trips on real data that never tripped on synthetic
-  data, that's a real data-quality finding to bring back to the researcher,
-  not something to loosen quietly.
+  before trusting it there. If a validation check in `validate_ohlcv()`
+  trips on real data that never tripped on synthetic data (this has
+  happened — a single bad bar from the data provider), that's a real
+  data-quality finding to bring back to the researcher, not something to
+  loosen quietly.
 - **Cost.** Every `run_paper_trading.py` invocation that finds a new signal
   makes one real, billed `claude-sonnet-5` call per ticker (not per
-  review). See the Phase 2 commit/PR description for the per-run cost
-  estimate before scheduling this to run automatically.
+  review) — at `output_config={"effort": "low"}`, well under a dollar per
+  day even across the full 20-ticker universe in practice. `thesis.py`
+  enforces a hard daily spend cap (`Config.max_daily_cost_usd`, default
+  $5.00) via `cost_tracking.py` regardless — see `output/llm_cost_log.jsonl`
+  for the running total.
 - **Benchmark semantics.** Phase 2's `excess_return` is computed against an
   equal-weighted real-data buy-and-hold basket of the fixed universe, not
   literally the traded ticker's own price — see RESEARCH_SPEC.md's

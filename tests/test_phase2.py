@@ -13,6 +13,7 @@ Run with: python3 -m pytest tests/ -v   (or python3 -m unittest discover)
 
 import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -21,9 +22,23 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
 
+from src.config import Config
 from src.data import fetch_ohlcv, generate_synthetic_ohlcv
 from src.thesis import MIN_BARS_FOR_LLM_THESIS, form_thesis_llm
 from src.run_paper_trading import _already_signaled, _build_benchmark, _select_signal_date
+
+
+def _fake_usage(input_tokens=500, output_tokens=50, cache_creation_input_tokens=0, cache_read_input_tokens=0):
+    """A response.usage stand-in with real int fields -- form_thesis_llm's
+    cost-logging path (src/cost_tracking.py) needs actual numbers, not an
+    auto-generated MagicMock child, or estimate_cost_usd()'s arithmetic
+    produces a non-JSON-serializable value."""
+    usage = MagicMock()
+    usage.input_tokens = input_tokens
+    usage.output_tokens = output_tokens
+    usage.cache_creation_input_tokens = cache_creation_input_tokens
+    usage.cache_read_input_tokens = cache_read_input_tokens
+    return usage
 
 
 def _fake_yf_history(n_bars=30, tz_aware=True):
@@ -82,6 +97,23 @@ class TestFetchOhlcvYfinance(unittest.TestCase):
 
 
 class TestFormThesisLlm(unittest.TestCase):
+    def setUp(self):
+        # form_thesis_llm logs every call's cost to CONFIG.cost_log_path
+        # (src/cost_tracking.py) -- point that at a temp file for every
+        # test in this class so tests never write into the real repo's
+        # output/ directory, and each test starts with zero prior spend.
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.test_config = Config(
+            cost_log_path=str(Path(self.tmpdir.name) / "cost_log.jsonl"),
+            max_daily_cost_usd=5.00,
+        )
+        self.config_patcher = patch("src.config.CONFIG", self.test_config)
+        self.config_patcher.start()
+
+    def tearDown(self):
+        self.config_patcher.stop()
+        self.tmpdir.cleanup()
+
     def test_insufficient_history_returns_flat_without_calling_api(self):
         hist = generate_synthetic_ohlcv("BTC-USD", n_bars=MIN_BARS_FOR_LLM_THESIS - 1, seed=1)
         with patch("anthropic.Anthropic") as mock_anthropic_cls:
@@ -103,6 +135,7 @@ class TestFormThesisLlm(unittest.TestCase):
         fake_response = MagicMock()
         fake_response.content = [fake_tool_block]
         fake_response.stop_reason = "tool_use"
+        fake_response.usage = _fake_usage()
 
         mock_client = MagicMock()
         mock_client.messages.create.return_value = fake_response
@@ -128,6 +161,7 @@ class TestFormThesisLlm(unittest.TestCase):
         fake_response = MagicMock()
         fake_response.content = [text_block]
         fake_response.stop_reason = "end_turn"
+        fake_response.usage = _fake_usage()
 
         mock_client = MagicMock()
         mock_client.messages.create.return_value = fake_response
@@ -147,6 +181,7 @@ class TestFormThesisLlm(unittest.TestCase):
         fake_response = MagicMock()
         fake_response.content = [fake_tool_block]
         fake_response.stop_reason = "tool_use"
+        fake_response.usage = _fake_usage()
 
         mock_client = MagicMock()
         mock_client.messages.create.return_value = fake_response
@@ -159,6 +194,48 @@ class TestFormThesisLlm(unittest.TestCase):
         # CSV block should reflect 60 rows, not 400.
         csv_lines = [l for l in user_message.split("\n") if l and l[0].isdigit()]
         self.assertEqual(len(csv_lines), 60)
+
+    def test_successful_call_is_logged_to_cost_log(self):
+        hist = generate_synthetic_ohlcv("BTC-USD", n_bars=80, seed=10)
+
+        fake_tool_block = MagicMock()
+        fake_tool_block.type = "tool_use"
+        fake_tool_block.input = {"direction": "LONG", "confidence": 0.6, "reasoning": "r"}
+        fake_response = MagicMock()
+        fake_response.content = [fake_tool_block]
+        fake_response.stop_reason = "tool_use"
+        fake_response.usage = _fake_usage(input_tokens=1000, output_tokens=100)
+
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = fake_response
+
+        with patch("anthropic.Anthropic", return_value=mock_client):
+            form_thesis_llm("BTC-USD", hist)
+
+        from src.cost_tracking import cumulative_cost_today
+        spent = cumulative_cost_today(self.test_config.cost_log_path)
+        # 1000 input @ $2/MTok + 100 output @ $10/MTok = $0.002 + $0.001 = $0.003
+        self.assertAlmostEqual(spent, 0.003, places=6)
+
+    def test_call_refused_once_daily_cost_cap_reached(self):
+        # Pre-seed the cost log at (over) the cap, then confirm the call is
+        # refused BEFORE ever touching the (mocked) Anthropic client -- a
+        # hard circuit breaker, not just a log entry after the fact.
+        from src.cost_tracking import log_llm_call
+
+        capped_config = Config(
+            cost_log_path=self.test_config.cost_log_path,
+            max_daily_cost_usd=0.001,
+        )
+        log_llm_call(capped_config.cost_log_path, "claude-sonnet-5", "ETH-USD", _fake_usage(input_tokens=10_000))
+
+        hist = generate_synthetic_ohlcv("BTC-USD", n_bars=80, seed=11)
+        with patch("src.config.CONFIG", capped_config), \
+             patch("anthropic.Anthropic") as mock_anthropic_cls:
+            with self.assertRaises(RuntimeError) as ctx:
+                form_thesis_llm("BTC-USD", hist)
+        mock_anthropic_cls.assert_not_called()
+        self.assertIn("daily cost cap", str(ctx.exception))
 
 
 class TestPaperTradingRunnerHelpers(unittest.TestCase):

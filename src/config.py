@@ -86,5 +86,15 @@ class Config:
 
     dry_run_summary_path: str = "output/phase1_dry_run_summary.csv"
 
+    # Cost telemetry / circuit breaker for form_thesis_llm()'s real
+    # Anthropic calls -- see src/cost_tracking.py. Every call is logged
+    # here (append-only), and a new call is refused once today's estimated
+    # spend reaches max_daily_cost_usd. $5.00 is a generous safety ceiling,
+    # not a tuned budget: at effort=low with a 20-ticker universe, a full
+    # day's signal calls cost well under $1 in practice -- this exists to
+    # catch a runaway loop or misconfiguration, not to constrain normal use.
+    cost_log_path: str = "output/llm_cost_log.jsonl"
+    max_daily_cost_usd: float = 5.00
+
 
 CONFIG = Config()

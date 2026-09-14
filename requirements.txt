@@ -1,5 +1,11 @@
-pandas
-numpy
-yfinance
-ccxt
-anthropic
+# Pinned to versions verified working in this project's own test suite and
+# live Phase 2 runs (2026-09-14) -- exact pins rather than floors, since an
+# unpinned dependency here means a future breaking release could silently
+# break a scheduled Phase 2 run with no warning. Bump deliberately (re-run
+# the full test suite + a live Phase 2 smoke run before committing a bump),
+# not by accident.
+pandas==3.0.5
+numpy==2.4.6
+yfinance==1.7.0
+ccxt==4.5.78
+anthropic==1.5.0

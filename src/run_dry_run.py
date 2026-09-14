@@ -15,6 +15,7 @@ Run with:  python3 -m src.run_dry_run
 from __future__ import annotations
 
 import sys
+from dataclasses import asdict
 from pathlib import Path
 
 # Allow running as `python3 -m src.run_dry_run` from the project root.
@@ -24,7 +25,7 @@ import pandas as pd
 
 from src.config import CONFIG
 from src.data import generate_synthetic_ohlcv, validate_ohlcv
-from src.journal import load_journal
+from src.journal import append_decisions, append_outcomes, load_journal
 from src.workflow import run_review_step, run_signal_step
 
 
@@ -78,6 +79,13 @@ def main() -> None:
         return
 
     # --- Signal generation over the whole window (steps 1-5) ---
+    # write_to_journal=False + one batched append_decisions() call at the
+    # end, instead of one append_decision() disk write per record: Phase 1
+    # logs thousands of records in this one invocation, and a full
+    # read+rewrite+fsync PER record (what each individual append_decision()
+    # call does) made a complete run take minutes instead of seconds. See
+    # append_decisions()' and run_signal_step()'s docstrings.
+    signal_records = []
     signal_count = 0
     for ticker, hist in histories.items():
         # Skip the first 5 bars (need lookback for the stub thesis) and the
@@ -90,15 +98,21 @@ def main() -> None:
                 journal_path=journal_path,
                 position_size_fraction=CONFIG.position_size_fraction,
                 data_source="SYNTHETIC",
+                write_to_journal=False,
             )
+            signal_records.append(record)
             if record.action == "BUY":
                 signal_count += 1
 
+    append_decisions(journal_path, signal_records)
     print(f"\nSignal generation complete. {signal_count} BUY decisions logged.")
 
     # --- Review pass (step 6) ---
-    rows = load_journal(journal_path)
-    completed = 0
+    # Same batching: review every just-generated record in memory (no need
+    # to re-read what we just wrote) and apply all resulting outcomes in
+    # one append_outcomes() call.
+    rows = [asdict(r) for r in signal_records]
+    outcomes = []
     for row in rows:
         hist = histories[row["ticker"]]
         updated = run_review_step(
@@ -109,11 +123,13 @@ def main() -> None:
             taker_fee_bps=CONFIG.taker_fee_bps,
             slippage_bps=CONFIG.slippage_bps,
             benchmark_history=benchmark_history,
+            write_to_journal=False,
         )
         if updated is not None:
-            completed += 1
+            outcomes.append(updated)
 
-    print(f"Review pass complete. {completed} outcomes completed.")
+    append_outcomes(journal_path, outcomes)
+    print(f"Review pass complete. {len(outcomes)} outcomes completed.")
 
     # --- Summary (non-evidentiary, plumbing check only) ---
     rows = load_journal(journal_path)

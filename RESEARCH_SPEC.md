@@ -45,12 +45,15 @@ after they occur. This is the same prospective-journal discipline the
 original SMA/ATR project adopted once its own backtest turned out fragile —
 here it's the *only* valid evidence, not a fallback.
 
-**Phase 2 is now implemented** (`src/run_paper_trading.py`, real
-`fetch_ohlcv()` in `src/data.py`, real `form_thesis_llm()` in
-`src/thesis.py`). It has logged **zero** decisions and completed **zero**
-outcomes as of this writing — see "Reading Phase 2 output" below. Every
-Phase 1 number remains explicitly non-evidentiary; nothing from Phase 1
-carries over into the Phase 2 count.
+**Phase 2 is now implemented and running** (`src/run_paper_trading.py`,
+real `fetch_ohlcv()` in `src/data.py`, real `form_thesis_llm()` in
+`src/thesis.py`). As of 2026-09-14 it has logged **19** real decisions
+(all HOLD/FLAT or newly-opened BUY so far) and completed **zero**
+outcomes — the earliest BUYs haven't reached their 5-bar holding period
+yet. Zero completed outcomes is still the correct state to be in this
+early; see "Reading Phase 2 output" below for how to read this count as
+it grows. Every Phase 1 number remains explicitly non-evidentiary; nothing
+from Phase 1 carries over into the Phase 2 count.
 
 #### Reading Phase 2 output
 
@@ -72,13 +75,16 @@ carries over into the Phase 2 count.
   researcher rather than decided silently — revisit it if a stricter
   per-instrument comparison is wanted; that would require changing
   `workflow.run_review_step`'s frozen math, not just the runner.
-- **Data-fetch caveat:** `fetch_ohlcv()` was implemented and unit-tested
-  with mocked responses, but the sandbox it was built in had no outbound
-  network access to any market-data provider tried (Yahoo Finance,
-  Coinbase, Binance, Kraken all returned policy-denied). It has not yet
-  been exercised against a real response — run
-  `RUN_LIVE_INTEGRATION_TESTS=1 python3 -m unittest tests/test_integration_live.py -v`
-  once from an environment with real network access before relying on it.
+- **Data-fetch caveat (resolved 2026-09-14):** `fetch_ohlcv()` was
+  originally implemented and unit-tested with mocked responses only — the
+  sandbox it was built in had no outbound network access to any
+  market-data provider tried (Yahoo Finance, Coinbase, Binance, Kraken all
+  returned policy-denied), so it had never been exercised against a real
+  response. It has since been run repeatedly from an environment with real
+  network access (the one this project now runs Phase 2 from) and works
+  correctly against real yfinance data. If run from a *different*,
+  possibly-restricted environment, re-verify first with
+  `RUN_LIVE_INTEGRATION_TESTS=1 python3 -m unittest tests/test_integration_live.py -v`.
 
 ## Frozen Parameters (Phase 1)
 
