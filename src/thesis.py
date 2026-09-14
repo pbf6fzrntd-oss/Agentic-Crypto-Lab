@@ -76,7 +76,14 @@ _THESIS_TOOL = {
         "type": "object",
         "properties": {
             "direction": {"type": "string", "enum": ["LONG", "FLAT"]},
-            "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+            # NOTE: no "minimum"/"maximum" here -- Anthropic's strict tool-schema
+            # mode rejects those keywords on a "number" type (400
+            # invalid_request_error). The [0.0, 1.0] range is documented for the
+            # model below and enforced at runtime instead, in form_thesis_llm.
+            "confidence": {
+                "type": "number",
+                "description": "Self-assessed probability in [0.0, 1.0] that the named direction is correct.",
+            },
             "reasoning": {"type": "string"},
         },
         "required": ["direction", "confidence", "reasoning"],
@@ -241,9 +248,15 @@ def form_thesis_llm(ticker: str, recent_bars: pd.DataFrame) -> Thesis:
     if direction not in ("LONG", "FLAT"):
         raise RuntimeError(f"form_thesis_llm({ticker}): unexpected direction {direction!r}")
 
+    # confidence's [0.0, 1.0] range can't be expressed in the strict tool
+    # schema (see _THESIS_TOOL), so it's checked here instead.
+    confidence = float(data["confidence"])
+    if not (0.0 <= confidence <= 1.0):
+        raise RuntimeError(f"form_thesis_llm({ticker}): confidence {confidence!r} out of [0.0, 1.0]")
+
     return Thesis(
         direction=direction,
-        confidence=float(data["confidence"]),
+        confidence=confidence,
         reasoning=str(data["reasoning"]),
         source=f"LLM:{LLM_MODEL}",
     )
