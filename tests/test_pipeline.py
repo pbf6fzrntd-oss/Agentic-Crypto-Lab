@@ -17,7 +17,7 @@ from src.data import generate_synthetic_ohlcv, validate_ohlcv
 from src.journal import JournalRecord, append_decision, append_outcome, load_journal
 from src.risk import risk_check
 from src.thesis import Thesis, stub_form_thesis
-from src.workflow import gather_data, run_review_step, run_signal_step
+from src.workflow import MAX_SANE_ABS_RETURN, gather_data, run_review_step, run_signal_step
 
 
 class TestDataValidation(unittest.TestCase):
@@ -67,6 +67,47 @@ class TestRiskCheck(unittest.TestCase):
         self.assertTrue(r.approved)
         self.assertEqual(r.size_fraction, 0.1)
 
+    def test_default_exposure_params_never_trip_the_cap(self):
+        # Regression guard: every pre-existing call site (Phase 1's dry run
+        # in particular) calls risk_check() without the new exposure
+        # params. Confirm the defaults are truly inert -- approval must
+        # depend only on direction/confidence, exactly as before this cap
+        # was added.
+        t = Thesis(direction="LONG", confidence=0.9, reasoning="x", source="STUB")
+        r = risk_check(t, position_size_fraction=0.1)
+        self.assertTrue(r.approved)
+
+    def test_position_within_exposure_cap_approved(self):
+        t = Thesis(direction="LONG", confidence=0.9, reasoning="x", source="STUB")
+        r = risk_check(
+            t, position_size_fraction=0.1,
+            current_gross_exposure=0.5, max_gross_exposure_fraction=1.0,
+        )
+        self.assertTrue(r.approved)
+        self.assertEqual(r.size_fraction, 0.1)
+
+    def test_position_exceeding_exposure_cap_rejected_even_though_confident(self):
+        # A high-confidence LONG that would otherwise be approved is still
+        # rejected once it would push this run's aggregate exposure over
+        # the cap -- confirms the portfolio-level guard actually binds,
+        # independent of the per-position confidence/direction checks.
+        t = Thesis(direction="LONG", confidence=0.95, reasoning="x", source="STUB")
+        r = risk_check(
+            t, position_size_fraction=0.1,
+            current_gross_exposure=0.95, max_gross_exposure_fraction=1.0,
+        )
+        self.assertFalse(r.approved)
+        self.assertEqual(r.size_fraction, 0.0)
+        self.assertIn("portfolio", r.reason.lower())
+
+    def test_position_exactly_at_exposure_cap_boundary_approved(self):
+        t = Thesis(direction="LONG", confidence=0.9, reasoning="x", source="STUB")
+        r = risk_check(
+            t, position_size_fraction=0.1,
+            current_gross_exposure=0.9, max_gross_exposure_fraction=1.0,
+        )
+        self.assertTrue(r.approved)  # 0.9 + 0.1 == 1.0, not over the cap
+
 
 class TestJournalImmutability(unittest.TestCase):
     def setUp(self):
@@ -77,6 +118,8 @@ class TestJournalImmutability(unittest.TestCase):
     def tearDown(self):
         if os.path.exists(self.path):
             os.remove(self.path)
+        if os.path.exists(self.path + ".lock"):
+            os.remove(self.path + ".lock")
 
     def _make_record(self, record_id="r1"):
         return JournalRecord(
@@ -148,6 +191,8 @@ class TestWorkflowOrdering(unittest.TestCase):
     def tearDown(self):
         if os.path.exists(self.path):
             os.remove(self.path)
+        if os.path.exists(self.path + ".lock"):
+            os.remove(self.path + ".lock")
 
     def test_signal_step_produces_hold_when_thesis_flat(self):
         def always_flat(ticker, bars):
@@ -208,6 +253,43 @@ class TestWorkflowOrdering(unittest.TestCase):
         self.assertEqual(updated["outcome_status"], "COMPLETE")
         # net_of_cost_return should be lower than stock_return (costs applied)
         self.assertLess(updated["net_of_cost_return"], updated["stock_return"])
+
+    def test_review_step_refuses_implausible_return(self):
+        # Regression test for the SYNTHETIC-entry/REAL-exit price-scale bug:
+        # a record whose entry_price is on a wildly different scale from
+        # the history it's reviewed against must raise, not silently write
+        # a nonsense outcome to the journal.
+        def always_long(ticker, bars):
+            return Thesis(direction="LONG", confidence=0.9, reasoning="forced long", source="STUB")
+
+        hist = generate_synthetic_ohlcv("TEST-USD", n_bars=30, seed=9)
+        as_of = hist.index[5]
+        run_signal_step(
+            ticker="TEST-USD", full_history=hist, as_of_date=as_of,
+            journal_path=self.path, position_size_fraction=0.1,
+            data_source="SYNTHETIC", thesis_fn=always_long,
+        )
+        row = load_journal(self.path)[0]
+        # Corrupt entry_price to be off by several orders of magnitude from
+        # what `hist` actually contains at entry_date, the same shape of
+        # mismatch a SYNTHETIC-vs-REAL mixup produces.
+        row["entry_price"] = 0.001
+
+        with self.assertRaises(RuntimeError) as ctx:
+            run_review_step(
+                record=row, full_history=hist, holding_period_bars=5,
+                journal_path=self.path, taker_fee_bps=10, slippage_bps=5,
+                benchmark_history=hist,
+            )
+        self.assertIn("sanity bound", str(ctx.exception))
+        # And critically: no outcome was written -- the row stays PENDING.
+        reloaded = load_journal(self.path)[0]
+        self.assertEqual(reloaded["outcome_status"], "PENDING")
+
+    def test_max_sane_abs_return_does_not_reject_normal_outcomes(self):
+        # Sanity check on the bound itself: a plausible small-cap 5-day
+        # move must not trip it (e.g. a 40% run, well under the 500% bound).
+        self.assertGreater(MAX_SANE_ABS_RETURN, 0.40)
 
 
 if __name__ == "__main__":

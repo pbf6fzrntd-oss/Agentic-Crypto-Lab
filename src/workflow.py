@@ -29,6 +29,19 @@ from .thesis import Thesis, stub_form_thesis
 
 ThesisFn = Callable[[str, pd.DataFrame], Thesis]
 
+# Safety net for run_review_step, independent of any specific known bug: no
+# legitimate 5-bar-holding-period crypto swing should ever produce a return
+# outside this bound. It exists to fail loudly on the *next* scale-mismatch
+# or bad-data-provider bug (entry/exit prices from two incompatible sources,
+# a stock-split-style data glitch, etc.) instead of silently writing a
+# nonsense outcome into the immutable journal -- which is exactly what
+# happened once already: a SYNTHETIC (~$100-scale) entry price reviewed
+# against a REAL (~$77,000-scale) exit price produced a 760x "return." 500%
+# is already far beyond a plausible outcome for this project's universe and
+# holding period, even for a volatile small-cap coin, while still nowhere
+# near the ~760x/~38x magnitude that bug produced.
+MAX_SANE_ABS_RETURN = 5.0  # 500%
+
 
 def gather_data(full_history: pd.DataFrame, as_of_date: pd.Timestamp) -> pd.DataFrame:
     """
@@ -52,10 +65,17 @@ def run_signal_step(
     data_source: str,
     thesis_fn: ThesisFn = stub_form_thesis,
     run_timestamp: Optional[str] = None,
+    current_gross_exposure: float = 0.0,
+    max_gross_exposure_fraction: float = 1.0,
 ) -> journal_mod.JournalRecord:
     """
     Execute steps 1-5 for a single ticker at a single decision date, and
     append the result to the journal. Returns the record that was logged.
+
+    `current_gross_exposure` / `max_gross_exposure_fraction` pass straight
+    through to risk_check() -- see its docstring. Both default to values
+    that make the portfolio-level cap a no-op, so this stays backward
+    compatible with every existing call site.
     """
     # 1. gather_data — enforce no-lookahead
     visible = gather_data(full_history, as_of_date)
@@ -66,7 +86,12 @@ def run_signal_step(
     thesis = thesis_fn(ticker, visible)
 
     # 3. risk_check
-    risk = risk_check(thesis, position_size_fraction)
+    risk = risk_check(
+        thesis,
+        position_size_fraction,
+        current_gross_exposure=current_gross_exposure,
+        max_gross_exposure_fraction=max_gross_exposure_fraction,
+    )
 
     # 4. decide
     action = decide(risk)
@@ -137,6 +162,16 @@ def run_review_step(
     entry_price = record["entry_price"]
 
     stock_return = exit_price / entry_price - 1
+
+    if abs(stock_return) > MAX_SANE_ABS_RETURN:
+        raise RuntimeError(
+            f"run_review_step({record['ticker']}, {record['record_id']}): computed "
+            f"stock_return={stock_return:.4%} exceeds the {MAX_SANE_ABS_RETURN:.0%} sanity "
+            f"bound (entry_price={entry_price!r} on {record['entry_date']}, "
+            f"exit_price={exit_price!r} on {exit_date.date()}). Refusing to write this outcome "
+            f"-- this smells like mismatched data sources (e.g. a SYNTHETIC entry reviewed "
+            f"against a REAL exit) or a bad price from the data provider, not a real market move."
+        )
 
     # Benchmark: buy-and-hold over the identical entry/exit dates.
     bench_entry = float(benchmark_history["Open"].loc[entry_date])

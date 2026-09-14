@@ -149,6 +149,14 @@ def main() -> None:
     # --- Signal pass (steps 1-5), one decision-eligible date per ticker ---
     new_decisions = 0
     errored_tickers = []
+    # Portfolio-level gross exposure committed so far THIS run, across all
+    # tickers -- accumulated here and passed into risk_check() (via
+    # run_signal_step) so no single run can approve more than
+    # CONFIG.max_gross_exposure_fraction in aggregate, no matter how many
+    # tickers in the universe signal LONG on the same day. See
+    # config.py / risk.py for why this only matters once the universe is
+    # wide enough for that to happen.
+    gross_exposure = 0.0
     for ticker, hist in histories.items():
         if len(hist) < 6:
             print(f"[SKIP] {ticker}: not enough history yet for a signal ({len(hist)} bars).")
@@ -170,6 +178,8 @@ def main() -> None:
                 position_size_fraction=CONFIG.position_size_fraction,
                 data_source=hist.attrs.get("data_source", "REAL"),
                 thesis_fn=form_thesis_llm,
+                current_gross_exposure=gross_exposure,
+                max_gross_exposure_fraction=CONFIG.max_gross_exposure_fraction,
             )
         except Exception as exc:  # noqa: BLE001 — never fabricate a decision on LLM/log failure
             print(f"[ERROR] {ticker}: thesis/log step failed, skipping this run: {exc}")
@@ -177,9 +187,12 @@ def main() -> None:
             continue
 
         new_decisions += 1
+        if record.risk_approved:
+            gross_exposure += record.risk_size_fraction
         print(
             f"  {ticker} {signal_date}: {record.action} "
             f"(direction={record.thesis_direction}, confidence={record.thesis_confidence:.2f})"
+            + (f" [{record.risk_reason}]" if not record.risk_approved and record.thesis_direction != "FLAT" else "")
         )
 
     # --- Review pass (step 6): complete any PENDING BUY whose holding
@@ -198,15 +211,19 @@ def main() -> None:
             # prices would produce a nonsense return (synthetic entry price
             # vs. real exit price) instead of a skip -- never mix scales.
             continue
-        updated = run_review_step(
-            record=row,
-            full_history=histories[ticker],
-            holding_period_bars=CONFIG.holding_period_bars,
-            journal_path=journal_path,
-            taker_fee_bps=CONFIG.taker_fee_bps,
-            slippage_bps=CONFIG.slippage_bps,
-            benchmark_history=benchmark_history,
-        )
+        try:
+            updated = run_review_step(
+                record=row,
+                full_history=histories[ticker],
+                holding_period_bars=CONFIG.holding_period_bars,
+                journal_path=journal_path,
+                taker_fee_bps=CONFIG.taker_fee_bps,
+                slippage_bps=CONFIG.slippage_bps,
+                benchmark_history=benchmark_history,
+            )
+        except Exception as exc:  # noqa: BLE001 — one bad/malformed row must not abort review for the rest
+            print(f"[REVIEW ERROR] {ticker} {row['signal_date']}: {exc}")
+            continue
         if updated is not None:
             completed_this_run += 1
             print(
