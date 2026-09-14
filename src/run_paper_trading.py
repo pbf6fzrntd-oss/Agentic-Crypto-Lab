@@ -191,6 +191,13 @@ def main() -> None:
         ticker = row["ticker"]
         if ticker not in histories:
             continue  # can't review without this ticker's real data this run
+        if not row.get("data_source", "").startswith("REAL"):
+            # This row's own entry decision was made on SYNTHETIC (Phase 1)
+            # data, on a completely different price scale from the REAL
+            # market data fetched this run. Reviewing it against real exit
+            # prices would produce a nonsense return (synthetic entry price
+            # vs. real exit price) instead of a skip -- never mix scales.
+            continue
         updated = run_review_step(
             record=row,
             full_history=histories[ticker],
