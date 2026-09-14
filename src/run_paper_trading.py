@@ -65,6 +65,20 @@ def _already_signaled(rows: list[dict], ticker: str, signal_date: str) -> bool:
     return any(r["ticker"] == ticker and r["signal_date"] == signal_date for r in rows)
 
 
+def _is_reviewable_with_real_data(row: dict) -> bool:
+    """
+    Guard for the review pass: a journal row may only be reviewed against
+    the real price history fetched this run if IT was itself decided from
+    real data. A Phase 1 row (`data_source == "SYNTHETIC"`) uses an
+    unrelated price scale (synthetic bars start around $100; real BTC/ETH
+    bars don't) — matching its entry_date string against real history would
+    "complete" it with a fabricated outcome (e.g. a bogus 700x return)
+    instead of correctly leaving it PENDING forever. Phase 1 rows are never
+    evidence and must never be touched by this runner.
+    """
+    return str(row.get("data_source", "")).startswith("REAL")
+
+
 def _select_signal_date(hist: pd.DataFrame) -> pd.Timestamp:
     """
     Pick the one bar to signal on this run: the SECOND-TO-LAST fetched bar.
@@ -191,6 +205,8 @@ def main() -> None:
         ticker = row["ticker"]
         if ticker not in histories:
             continue  # can't review without this ticker's real data this run
+        if not _is_reviewable_with_real_data(row):
+            continue
         updated = run_review_step(
             record=row,
             full_history=histories[ticker],

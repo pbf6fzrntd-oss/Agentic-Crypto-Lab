@@ -23,7 +23,12 @@ import pandas as pd
 
 from src.data import fetch_ohlcv, generate_synthetic_ohlcv
 from src.thesis import MIN_BARS_FOR_LLM_THESIS, form_thesis_llm
-from src.run_paper_trading import _already_signaled, _build_benchmark, _select_signal_date
+from src.run_paper_trading import (
+    _already_signaled,
+    _build_benchmark,
+    _is_reviewable_with_real_data,
+    _select_signal_date,
+)
 
 
 def _fake_yf_history(n_bars=30, tz_aware=True):
@@ -174,6 +179,19 @@ class TestPaperTradingRunnerHelpers(unittest.TestCase):
         self.assertTrue(_already_signaled(rows, "BTC-USD", "2026-01-05"))
         self.assertFalse(_already_signaled(rows, "BTC-USD", "2026-01-06"))
         self.assertFalse(_already_signaled(rows, "ETH-USD", "2026-01-05"))
+
+    def test_synthetic_rows_are_never_reviewable_with_real_data(self):
+        # Regression test: a Phase 1 SYNTHETIC decision must never be
+        # reviewed against Phase 2 REAL price history -- the price scales
+        # are unrelated, so matching entry_date strings across them would
+        # fabricate a nonsense outcome (see the bug this guards against,
+        # found by actually running the Phase 2 runner against real data:
+        # it "completed" old synthetic BTC/ETH rows with real BTC/ETH exit
+        # prices, producing e.g. a 700x fabricated return).
+        self.assertFalse(_is_reviewable_with_real_data({"data_source": "SYNTHETIC"}))
+        self.assertTrue(_is_reviewable_with_real_data({"data_source": "REAL:yfinance"}))
+        self.assertTrue(_is_reviewable_with_real_data({"data_source": "REAL:ccxt:coinbase"}))
+        self.assertFalse(_is_reviewable_with_real_data({}))
 
     def test_build_benchmark_is_not_identical_to_any_single_ticker(self):
         btc = generate_synthetic_ohlcv("BTC-USD", n_bars=50, seed=6)

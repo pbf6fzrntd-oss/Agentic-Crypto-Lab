@@ -72,13 +72,40 @@ carries over into the Phase 2 count.
   researcher rather than decided silently — revisit it if a stricter
   per-instrument comparison is wanted; that would require changing
   `workflow.run_review_step`'s frozen math, not just the runner.
-- **Data-fetch caveat:** `fetch_ohlcv()` was implemented and unit-tested
-  with mocked responses, but the sandbox it was built in had no outbound
-  network access to any market-data provider tried (Yahoo Finance,
-  Coinbase, Binance, Kraken all returned policy-denied). It has not yet
-  been exercised against a real response — run
+- **Data-fetch caveat — RESOLVED 2026-09-14.** `fetch_ohlcv()` was
+  implemented and unit-tested with mocked responses, but the sandbox it was
+  built in had no outbound network access to any market-data provider tried
+  (Yahoo Finance, Coinbase, Binance, Kraken all returned policy-denied). It
+  has now been run once from an environment with real network access:
   `RUN_LIVE_INTEGRATION_TESTS=1 python3 -m unittest tests/test_integration_live.py -v`
-  once from an environment with real network access before relying on it.
+  passed against live Yahoo Finance data for both BTC-USD and ETH-USD
+  (400 real daily bars each fetched and validated by `run_paper_trading.py`
+  too). The yfinance path works as documented; the ccxt/Coinbase fallback
+  remains unexercised against a real response (yfinance never failed, so it
+  was never triggered).
+- **LLM-call caveat — still blocked, different reason.** The first real
+  invocation of `run_paper_trading.py` (2026-09-14) got past data-fetch
+  cleanly but failed at `form_thesis_llm()` for both tickers with
+  "Could not resolve authentication method" — that sandbox had no
+  `ANTHROPIC_API_KEY` configured for direct SDK use. No decision was
+  logged (the runner correctly skips-and-reports rather than fabricating a
+  thesis on this failure), so the journal is untouched. Phase 2 still has
+  **zero** logged decisions and **zero** completed outcomes as of this
+  writing. Run again from an environment with `ANTHROPIC_API_KEY` set
+  before Phase 2 evidence can start accumulating.
+- **Bug found and fixed while running the above (2026-09-14):** the review
+  pass in `run_paper_trading.py` matched any journal row for a ticker
+  present in that run's freshly-fetched real history — including Phase 1
+  rows with `data_source == "SYNTHETIC"` — and "completed" them using real
+  BTC/ETH prices. Because synthetic bars are priced around $100 and real
+  BTC/ETH bars are not, this fabricated outcomes like a 760x BTC-USD return
+  and two ~38x ETH-USD returns on old Phase 1 rows before the bug was
+  caught. It was caught before being committed (the corrupted journal was
+  reverted, never pushed) and is now fixed: the review pass only considers
+  rows whose `data_source` starts with `"REAL"` (see
+  `_is_reviewable_with_real_data()` in `run_paper_trading.py`, covered by a
+  regression test in `tests/test_phase2.py`). Phase 1 SYNTHETIC rows now
+  correctly stay PENDING forever under this runner, as intended.
 
 ## Frozen Parameters (Phase 1)
 

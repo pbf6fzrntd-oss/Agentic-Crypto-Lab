@@ -60,17 +60,35 @@ python3 -m src.run_paper_trading           # Phase 2 — real data, real LLM cal
 
 ## Known limitations
 
-- **Phase 2 data fetch is implemented but unexercised against live data.**
-  `fetch_ohlcv()` (yfinance, with a ccxt/Coinbase fallback) was built and
-  unit-tested with mocked responses in a sandbox whose outbound network
-  access was blocked by organization egress policy for every market-data
-  host tried (Yahoo Finance, Coinbase, Binance, Kraken). Run it once from
-  an environment with real network access — and run
-  `RUN_LIVE_INTEGRATION_TESTS=1 python3 -m unittest tests/test_integration_live.py -v`
-  — before trusting it on a schedule. If a validation check in
-  `validate_ohlcv()` trips on real data that never tripped on synthetic
-  data, that's a real data-quality finding to bring back to the researcher,
-  not something to loosen quietly.
+- **Phase 2 data fetch: confirmed working against live data (2026-09-14).**
+  `fetch_ohlcv()` (yfinance, with a ccxt/Coinbase fallback) was originally
+  built and unit-tested with mocked responses only, in a sandbox whose
+  outbound network access was blocked for every market-data host tried. It
+  has since been run for real: both `RUN_LIVE_INTEGRATION_TESTS=1 python3
+  -m unittest tests/test_integration_live.py -v` and a live
+  `run_paper_trading.py` invocation fetched and validated 400 real daily
+  bars each for BTC-USD and ETH-USD from Yahoo Finance with no issues. The
+  ccxt/Coinbase fallback still hasn't been exercised against a real
+  response (yfinance hasn't failed yet, so it's never been triggered). If a
+  validation check in `validate_ohlcv()` ever trips on real data, that's a
+  real data-quality finding to bring back to the researcher, not something
+  to loosen quietly.
+- **Phase 2 LLM call: still blocked, now on missing credentials.** The same
+  live run above failed at `form_thesis_llm()` for both tickers —
+  `ANTHROPIC_API_KEY` wasn't set in that environment, so the Anthropic SDK
+  couldn't authenticate. No decision was logged (the runner reports and
+  skips rather than fabricating a thesis). Phase 2 still has zero logged
+  decisions. Set `ANTHROPIC_API_KEY` before the next run for evidence to
+  start accumulating.
+- **A real bug was found and fixed while running the above.** The review
+  pass used to match a journal row to any ticker in the freshly-fetched
+  real history, without checking that row's own `data_source` — so it
+  "completed" old Phase 1 SYNTHETIC rows using real BTC/ETH prices,
+  fabricating absurd returns (a 760x BTC "return", two ~38x ETH
+  "returns"). Caught before it was committed; fixed by
+  `_is_reviewable_with_real_data()`, which restricts the review pass to
+  rows whose `data_source` starts with `"REAL"`. Covered by a regression
+  test in `tests/test_phase2.py`.
 - **Cost.** Every `run_paper_trading.py` invocation that finds a new signal
   makes one real, billed `claude-sonnet-5` call per ticker (not per
   review). See the Phase 2 commit/PR description for the per-run cost
