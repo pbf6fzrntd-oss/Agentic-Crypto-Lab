@@ -49,6 +49,12 @@ src/
                         open-positions/recent-decisions lists — what the
                         published dashboard artifact (see below) refreshes
                         itself from
+  run_historical_validation.py  "Phase 1.5" — REAL 12mo daily price
+                        history (Yahoo Finance) but the NON-LLM
+                        stub_form_thesis, never the Anthropic API. NOT
+                        evidence, does not speed up the falsification
+                        check — see RESEARCH_SPEC.md's "Historical
+                        validation" note for exactly why.
 tests/
   test_pipeline.py        Phase 1 tests (no-lookahead, immutability, ordering)
   test_phase2.py           Phase 2 tests — fetch_ohlcv and form_thesis_llm
@@ -58,6 +64,9 @@ tests/
                            re-run makes no duplicate (billed) LLM calls
   test_run_dry_run.py     Phase 1's journal-separation guard: never touches
                            a real-evidence journal at a different path
+  test_run_historical_validation.py  asserts run_historical_validation.py
+                           never imports form_thesis_llm/cost_tracking and
+                           never touches the real journal
   test_journal_safety.py  atomic-write, concurrent-locking, and batched-
                            append tests for journal.py
   test_cost_tracking.py   cost-estimation and daily-cap tests for
@@ -77,6 +86,11 @@ output/
                                  entirely separate from the file above (see
                                  RESEARCH_SPEC.md's "Journal separation")
   phase1_dry_run_summary.csv    Phase 1 smoke-test summary CSV
+  historical_validation_journal.jsonl  run_historical_validation.py's own
+                                 journal — real prices, stub thesis, NOT
+                                 evidence; a third category, separate from
+                                 both files above
+  historical_validation_summary.csv    its summary CSV
   llm_cost_log.jsonl            one row per real form_thesis_llm() call —
                                  tokens used + estimated USD cost; read by
                                  cost_tracking.py to enforce the daily cap
@@ -109,6 +123,10 @@ python3 -m src.run_dry_run                 # Phase 1 — synthetic data, stub th
 
 export ANTHROPIC_KEY_FOR_TRADING=...       # required for Phase 2
 python3 -m src.run_paper_trading           # Phase 2 — real data, real LLM call, one pass
+
+python3 -m src.run_historical_validation   # "Phase 1.5" — real 12mo data, stub thesis,
+                                            # NEVER touches ANTHROPIC_KEY_FOR_TRADING or the
+                                            # API. NOT evidence — see RESEARCH_SPEC.md.
 ```
 
 ## Known limitations

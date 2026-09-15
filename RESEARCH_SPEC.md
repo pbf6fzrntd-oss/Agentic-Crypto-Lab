@@ -327,6 +327,53 @@ validated all 20 new-universe tickers plus `ICP-USD` (printed
 `[wind-down only, no longer in universe]`), opened no new `ICP-USD`
 position, and left its existing one on track to complete on schedule.
 
+### Historical validation ("Phase 1.5", 2026-09-15)
+
+Added `src/run_historical_validation.py`: the same frozen six-step
+workflow, fed REAL 12-month daily OHLCV history (`fetch_ohlcv()` / Yahoo
+Finance — the same function Phase 2 uses) instead of Phase 1's synthetic
+random walk, but still using `stub_form_thesis()` — the same non-LLM
+heuristic Phase 1 uses, NOT `form_thesis_llm()`. It never imports
+`form_thesis_llm` or anything from `cost_tracking.py`, and never reads
+`ANTHROPIC_KEY_FOR_TRADING` — enforced by a test that parses the module's
+own import statements, not just observed behavior. Writes to its own
+`Config.historical_journal_path`, a third journal entirely separate from
+both `journal_path` (Phase 2 real evidence) and `phase1_journal_path`
+(Phase 1 synthetic) — real prices, fake thesis, and it must never be
+mistaken for either of the other two.
+
+**This is explicitly NOT evidence, and does not speed up the
+falsification check, no matter how much real price history it runs
+against.** The reason real evidence is restricted to live, forward-only
+Phase 2 in the first place (see "Why This Design" above) is that a
+historical backtest of the *LLM thesis step specifically* can't be
+trusted — the model may carry training-data knowledge of what actually
+happened on any historical date it's shown, a form of lookahead bias no
+amount of careful timestamp handling fixes. This script sidesteps that
+problem by definition (it never asks the LLM anything), but that also
+means it can only test the MECHANICAL parts of the pipeline — data
+quality, cost model, no-lookahead enforcement, benchmark construction —
+against real market history, plus show what a purely mechanical (non-LLM)
+momentum rule would have done. Neither answers the actual research
+question. Its numbers are exactly as non-evidentiary as Phase 1's
+synthetic-data numbers — real prices under a fake thesis, instead of fake
+prices under a fake thesis.
+
+Verified live against the real universe: 17 of 20 tickers had clean
+12-month daily history (`SOL-USD`, `TON11419-USD`, and `SUI20947-USD`
+each hit a real one-bar data-quality issue and were correctly skipped by
+`validate_ohlcv()`, same as this pipeline already does live — not a bug
+in this script). 6,103 decisions, 2,150 BUY, 2,139 completed outcomes,
+mean net-of-cost return of the mechanical stub over real 2025-2026 crypto
+price history: **-1.10%** — plausible for a naive momentum rule after
+15bps round-trip costs, and a useful sanity check that the pipeline
+behaves sensibly against a full year of real data, but again: a fact
+about a mechanical baseline, not about the LLM. Does not apply the
+portfolio-level gross-exposure cap `run_paper_trading.py` does — mirrors
+Phase 1's simpler per-ticker-independent backfill exactly, since
+date-synchronized cap-aware backfilling across 20 tickers was out of
+scope for a script whose numbers are non-evidentiary either way.
+
 ## What Would Prove This Wrong
 
 If any apparent profitability edge over buy-and-hold disappears once

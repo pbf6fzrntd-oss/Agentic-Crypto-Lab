@@ -125,6 +125,18 @@ class Config:
 
     dry_run_summary_path: str = "output/phase1_dry_run_summary.csv"
 
+    # src/run_historical_validation.py's own journal -- REAL 12-month daily
+    # price history (Yahoo Finance) but the NON-LLM stub_form_thesis, same
+    # as Phase 1. Entirely separate from journal_path (Phase 2's real
+    # evidence) and phase1_journal_path (Phase 1's synthetic data): this is
+    # a THIRD, equally non-evidentiary category -- real prices, fake
+    # thesis -- and must never be mistaken for either. See
+    # RESEARCH_SPEC.md's "Historical validation" note for why it can't
+    # speed up the falsification check no matter how much real price
+    # history it runs against.
+    historical_journal_path: str = "output/historical_validation_journal.jsonl"
+    historical_summary_path: str = "output/historical_validation_summary.csv"
+
     # Cost telemetry / circuit breaker for form_thesis_llm()'s real
     # Anthropic calls -- see src/cost_tracking.py. Every call is logged
     # here (append-only), and a new call is refused once today's estimated
