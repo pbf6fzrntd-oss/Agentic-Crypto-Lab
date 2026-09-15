@@ -10,27 +10,40 @@ from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
 class Config:
-    # Fixed universe — the top 20 non-stablecoin cryptocurrencies by market
-    # cap, chosen (like the original BTC/ETH pair) for data availability and
-    # liquidity, not for any expected edge. Expanded from (BTC-USD, ETH-USD)
-    # on 2026-09-14, BEFORE any Phase 2 outcome had completed (see
-    # RESEARCH_SPEC.md's "Universe expansion" note for why that ordering
-    # matters and how each symbol below was verified).
+    # Fixed universe — the top 20 non-stablecoin cryptocurrencies by REAL
+    # market cap, chosen (like the original BTC/ETH pair) for data
+    # availability and liquidity, not for any expected edge. Expanded from
+    # (BTC-USD, ETH-USD) on 2026-09-14, corrected against live market-cap
+    # data on 2026-09-15 (see RESEARCH_SPEC.md's "Universe expansion" and
+    # "Universe correction" notes) — both changes made BEFORE any Phase 2
+    # outcome had completed.
     #
-    # UNI7083-USD is Yahoo Finance's disambiguated symbol for Uniswap (plain
-    # "UNI-USD" returns no data); every other symbol here is Yahoo's default
-    # spelling. Each was confirmed via this project's own fetch_ohlcv() to
-    # return real, validate_ohlcv()-clean data before being added, and its
-    # identity (longName) was checked to rule out a same-symbol collision
-    # with an unrelated asset — that check caught and excluded "TON-USD"
-    # (resolves to an unrelated "TON Token", not Toncoin) and "ARB-USD"
-    # (resolves to "ARbit", not Arbitrum) during that verification; both
-    # would have silently put the wrong asset in the universe.
+    # UNI7083-USD/TON11419-USD/SUI20947-USD are Yahoo Finance's
+    # disambiguated symbols for Uniswap/Toncoin/Sui (the plain "UNI-USD"/
+    # "SUI-USD" tickers return no data, and plain "TON-USD" resolves to an
+    # unrelated project called "TON Token" -- caught the same way the
+    # "ARB-USD" -> "ARbit" collision was caught below). Every symbol here
+    # was confirmed via this project's own fetch_ohlcv() to return real,
+    # validate_ohlcv()-clean data AT THE CURRENT bar_interval ("1h") before
+    # being added, and identity-checked (longName) to rule out a
+    # same-symbol collision with an unrelated asset -- that check also
+    # excluded plain "ARB-USD" (resolves to "ARbit", not Arbitrum; neither
+    # spelling of Arbitrum made the real top 20 either way).
+    #
+    # Two pegged/derivative tokens were deliberately excluded despite
+    # ranking within the raw top 20 by market cap: Lido Staked ETH
+    # (STETH-USD, tracks ETH 1:1 plus staking yield) and Wrapped Bitcoin
+    # (WBTC-USD, tracks BTC 1:1) — same rationale RESEARCH_SPEC.md already
+    # applies to stablecoins ("a pegged asset has no meaningful directional
+    # thesis... would dilute not test the hypothesis"): both are
+    # near-perfectly correlated with an asset already in this universe
+    # (ETH, BTC), so including them wouldn't add independent exposure, just
+    # double up on BTC/ETH under a different ticker.
     universe: tuple = (
-        "BTC-USD", "ETH-USD", "XRP-USD", "BNB-USD", "SOL-USD",
-        "DOGE-USD", "ADA-USD", "TRX-USD", "AVAX-USD", "SHIB-USD",
-        "DOT-USD", "LINK-USD", "BCH-USD", "NEAR-USD", "LTC-USD",
-        "ICP-USD", "UNI7083-USD", "ETC-USD", "XLM-USD", "ATOM-USD",
+        "BTC-USD", "ETH-USD", "BNB-USD", "XRP-USD", "SOL-USD",
+        "TRX-USD", "DOGE-USD", "XMR-USD", "LINK-USD", "ADA-USD",
+        "XLM-USD", "TON11419-USD", "BCH-USD", "UNI7083-USD", "LTC-USD",
+        "HBAR-USD", "AVAX-USD", "NEAR-USD", "SHIB-USD", "SUI20947-USD",
     )
 
     # Benchmark for every comparison.

@@ -214,5 +214,89 @@ class TestIdempotency(unittest.TestCase):
         self.assertEqual(len(rows_after_second), len(rows_after_first))  # no new row
 
 
+class TestWindDownTickerRemovedFromUniverse(unittest.TestCase):
+    """
+    Regression coverage for a gap the 2026-09-15 universe correction
+    (dropping DOT/ICP/ETC/ATOM, adding XMR/TON/HBAR/SUI) surfaced: a
+    ticker leaving CONFIG.universe while it still has an open PENDING
+    position must not orphan that position. main() must keep fetching
+    data for it (wind-down only) so the review pass can still complete it,
+    while never opening a NEW position in a ticker no longer in the
+    universe.
+    """
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.journal_path = str(Path(self.tmpdir.name) / "journal.jsonl")
+        self.universe_hist = _real_looking_history("BTC-USD", n_bars=40, start_price=50_000.0)
+        self.old_hist = _real_looking_history("OLD-COIN-USD", n_bars=40, start_price=10.0)
+
+        self.test_config = Config(
+            universe=("BTC-USD",),  # OLD-COIN-USD deliberately NOT in the universe
+            bar_interval="1d",
+            phase2_lookback_days=40,
+            holding_period_bars=5,
+            position_size_fraction=0.1,
+            taker_fee_bps=10.0,
+            slippage_bps=5.0,
+            data_dir=self.tmpdir.name,
+            output_dir=self.tmpdir.name,
+            journal_path=self.journal_path,
+            dry_run_summary_path=str(Path(self.tmpdir.name) / "unused.csv"),
+        )
+
+        entry_date = self.old_hist.index[5]
+        append_decision(self.journal_path, JournalRecord(
+            record_id="old-open-1",
+            run_timestamp="2020-01-01T00:00:00+00:00",
+            ticker="OLD-COIN-USD",
+            signal_date=str((entry_date - pd.Timedelta(days=1)).date()),
+            thesis_direction="LONG", thesis_confidence=0.8,
+            thesis_reasoning="an old thesis, from before this ticker left the universe",
+            thesis_source="LLM:claude-sonnet-5",
+            risk_approved=True, risk_size_fraction=0.1, risk_reason="r",
+            action="BUY", entry_date=str(entry_date.date()),
+            entry_price=float(self.old_hist["Open"].loc[entry_date]),
+            data_source="REAL:yfinance",
+        ))
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def _fetch_side_effect(self, ticker, lookback_days, interval):
+        if ticker == "BTC-USD":
+            return self.universe_hist
+        if ticker == "OLD-COIN-USD":
+            return self.old_hist
+        raise AssertionError(f"unexpected ticker fetched: {ticker!r}")
+
+    def test_removed_tickers_open_position_is_still_wound_down_but_never_re_signaled(self):
+        thesis_mock = MagicMock(return_value=Thesis(direction="FLAT", confidence=0.5, reasoning="x", source="LLM:x"))
+        with patch("src.run_paper_trading.CONFIG", self.test_config), \
+             patch("src.run_paper_trading.fetch_ohlcv", side_effect=self._fetch_side_effect), \
+             patch("src.run_paper_trading.validate_ohlcv", return_value=[]), \
+             patch("src.run_paper_trading.form_thesis_llm", thesis_mock):
+            rpt.main()
+
+        rows = {r["record_id"]: r for r in load_journal(self.journal_path)}
+
+        # The old position was wound down (reviewed to completion) even
+        # though its ticker is no longer in CONFIG.universe.
+        self.assertEqual(rows["old-open-1"]["outcome_status"], "COMPLETE")
+
+        # But no NEW decision was ever logged for it -- a ticker outside
+        # the universe gets reviewed, never a fresh signal.
+        new_old_coin_rows = [
+            r for r in rows.values()
+            if r["ticker"] == "OLD-COIN-USD" and r["record_id"] != "old-open-1"
+        ]
+        self.assertEqual(new_old_coin_rows, [])
+
+        # form_thesis_llm was only ever called for the actual universe
+        # ticker (BTC-USD), never for the wind-down-only one.
+        called_tickers = {c.args[0] if c.args else c.kwargs.get("ticker") for c in thesis_mock.call_args_list}
+        self.assertEqual(called_tickers, {"BTC-USD"})
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -124,9 +124,30 @@ def main() -> None:
 
     journal_path = CONFIG.journal_path
     Path(journal_path).parent.mkdir(parents=True, exist_ok=True)
+    existing_rows = load_journal(journal_path)
+
+    # A ticker can leave CONFIG.universe (as it just did: the 2026-09-15
+    # stablecoin/market-cap correction dropped DOT/ICP/ETC/ATOM) while it
+    # still has an open PENDING position from before the change. Fetching
+    # data for CONFIG.universe alone would silently orphan that position
+    # forever -- histories wouldn't have its ticker, so the review pass
+    # below (`if ticker not in histories: continue`) would skip it every
+    # run from then on, with no error, no signal, just a row stuck PENDING
+    # indefinitely. Fetch for the union instead: CONFIG.universe (eligible
+    # for NEW signals) plus any ticker with an already-open REAL position
+    # (wind-down only -- reviewed to completion, never signaled again).
+    open_position_tickers = {
+        r["ticker"]
+        for r in existing_rows
+        if r["action"] == "BUY"
+        and r["outcome_status"] == "PENDING"
+        and r.get("data_source", "").startswith("REAL")
+    }
+    wind_down_tickers = sorted(open_position_tickers - set(CONFIG.universe))
+    fetch_tickers = list(CONFIG.universe) + wind_down_tickers
 
     histories: dict[str, pd.DataFrame] = {}
-    for ticker in CONFIG.universe:
+    for ticker in fetch_tickers:
         try:
             hist = fetch_ohlcv(ticker, lookback_days=CONFIG.phase2_lookback_days, interval=CONFIG.bar_interval)
         except Exception as exc:  # noqa: BLE001 — never fabricate data on a fetch failure
@@ -140,9 +161,10 @@ def main() -> None:
             continue
 
         histories[ticker] = hist
+        wind_down_note = " [wind-down only, no longer in universe]" if ticker in wind_down_tickers else ""
         print(
             f"[OK] {ticker}: {len(hist)} real {CONFIG.bar_interval} bars validated "
-            f"(source={hist.attrs.get('data_source', 'REAL')})"
+            f"(source={hist.attrs.get('data_source', 'REAL')}){wind_down_note}"
         )
 
     if not histories:
@@ -150,7 +172,6 @@ def main() -> None:
         return
 
     benchmark_history = _build_benchmark(histories)
-    existing_rows = load_journal(journal_path)
 
     # --- Signal pass (steps 1-5), one decision-eligible date per ticker ---
     new_decisions = 0
@@ -173,7 +194,14 @@ def main() -> None:
         and r["outcome_status"] == "PENDING"
         and r.get("data_source", "").startswith("REAL")
     )
-    for ticker, hist in histories.items():
+    for ticker in CONFIG.universe:
+        # Only CONFIG.universe gets NEW signals -- wind_down_tickers are in
+        # `histories` purely so the review pass below can still complete
+        # them, never to open a fresh position (a ticker no longer in the
+        # universe must never get MORE exposure, only wind down existing).
+        if ticker not in histories:
+            continue
+        hist = histories[ticker]
         if len(hist) < 6:
             print(f"[SKIP] {ticker}: not enough history yet for a signal ({len(hist)} bars).")
             continue

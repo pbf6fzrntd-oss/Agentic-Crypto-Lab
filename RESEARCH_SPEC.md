@@ -265,6 +265,68 @@ What changed, and what deliberately did NOT:
   Phase 2, but nothing about its validity as a smoke test depends on that
   match, and rebuilding it for arbitrary intervals was out of scope here.
 
+### Universe correction (2026-09-15)
+
+The 2026-09-14 "Universe expansion" note above was built from general
+knowledge, not a live ranking — CoinGecko (and every other market-cap
+ranking API tried) was blocked by this environment's network policy at
+the time, so the 20 symbols were chosen by recognizability rather than
+verified rank. Asked directly whether any of the 20 were actually
+stablecoins, the answer was no (confirmed: none price near $1.00, all are
+genuine `CRYPTOCURRENCY`-type, non-pegged assets) — but checking properly
+surfaced that yfinance exposes real `marketCap` per ticker (not tried
+before), which made an actual live ranking possible for the first time.
+Recorded here per this document's own discipline: made with **59 real
+decisions logged and 0 completed outcomes** — still true after the run
+that applied this correction — before any result existed to have tuned
+against.
+
+Ranking ~35 candidates (the prior 20 plus known stablecoins, Lido Staked
+ETH, Wrapped Bitcoin, and every plausible top-20 candidate not already in
+the list) by real `marketCap` found the prior list had drifted from the
+true top 20 in both directions:
+
+- **Removed** (ranked outside the real top 20): `DOT-USD` (Polkadot,
+  ~$1.7B), `ICP-USD` (~$1.5B), `ETC-USD` (~$1.2B), `ATOM-USD` (~$846M).
+- **Added** (ranked inside the real top 20 but missing before):
+  `XMR-USD` (Monero, ~$9.7B — rank ~8, higher than 12 of the 20 tickers
+  already in the list), `TON11419-USD` (Toncoin, ~$4.5B), `HBAR-USD`
+  (Hedera, ~$3.4B), `SUI20947-USD` (Sui, ~$2.95B).
+- **Toncoin re-examined and included this time.** It was excluded during
+  the original expansion for returning only 1 daily bar with a validation
+  failure. Re-tested now at the interval Phase 2 actually trades on
+  (`"1h"`, not `"1d"`): 1440 clean hourly bars, no validation problems.
+  The original exclusion wasn't wrong for what was tested at the time; it
+  just stopped being the right conclusion once the operating interval
+  changed, and re-verifying against the interval actually in use rather
+  than assuming the earlier daily-bar result still applied is what caught
+  it.
+- **Two pegged/derivative tokens deliberately excluded despite ranking in
+  the raw top 20**, on the same principle RESEARCH_SPEC.md already states
+  for stablecoins ("a pegged asset has no meaningful directional thesis...
+  would dilute not test the hypothesis"): Lido Staked ETH (`STETH-USD`,
+  tracks ETH 1:1 plus staking yield, ~$24.3B, would rank ~7) and Wrapped
+  Bitcoin (`WBTC-USD`, tracks BTC 1:1, ~$9.1B, would rank ~10). Both are
+  near-perfectly correlated with an asset already in the universe, so
+  including them would double up on BTC/ETH exposure under a different
+  ticker rather than add independent signal. This is a judgment call
+  extending the stablecoin principle by analogy, not something explicitly
+  asked for — flagged explicitly here rather than applied silently.
+
+**A real operational gap was found and fixed while applying this
+correction:** `run_paper_trading.py` fetched data for exactly
+`Config.universe`, so dropping DOT/ICP/ETC/ATOM would have silently
+orphaned `ICP-USD`'s one open (`PENDING`) position from before the
+change — no data fetched for it ever again, so `run_review_step` would
+never see it and it would stay `PENDING` forever, uncompleted, with no
+error. Fixed: `main()` now fetches `Config.universe` UNION any ticker
+with an already-open REAL position, and only signals fresh decisions on
+`Config.universe` itself (a wind-down ticker is reviewed to completion,
+never re-signaled). Verified live: the corrected run fetched and
+validated all 20 new-universe tickers plus `ICP-USD` (printed
+`[wind-down only, no longer in universe]`), opened no new `ICP-USD`
+position, and left its existing one on track to complete on schedule.
+
 ## What Would Prove This Wrong
 
 If any apparent profitability edge over buy-and-hold disappears once
