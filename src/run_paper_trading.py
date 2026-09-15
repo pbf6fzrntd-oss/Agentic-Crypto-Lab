@@ -89,8 +89,26 @@ def _already_signaled(rows: list[dict], ticker: str, signal_date: str) -> bool:
     period (e.g. re-run by accident), never log a second decision — and
     never make a second billed LLM call — for a (ticker, signal_date) pair
     already in the journal.
+
+    Compares PARSED timestamps, not raw strings. signal_date has been
+    stored in more than one string format across this project's history —
+    see workflow.py's entry_date/signal_date note: a bare date
+    ("2026-09-13", from before that fix) and a full timestamp
+    ("2026-09-13 00:00:00", after it) name the exact same bar but are not
+    equal as strings. Comparing raw strings let this guard miss the
+    collision: 14 tickers got double-signaled (and double-billed) for the
+    same real calendar day on 2026-09-13 before this was caught — see
+    RESEARCH_SPEC.md's "Duplicate-signal guard hardened" note. Parsing
+    both sides through pd.Timestamp before comparing closes this
+    permanently, independent of which format either side happens to be in
+    (old journal rows included — this is a read-time fix, the journal
+    itself is never rewritten).
     """
-    return any(r["ticker"] == ticker and r["signal_date"] == signal_date for r in rows)
+    target = pd.Timestamp(signal_date)
+    return any(
+        r["ticker"] == ticker and pd.Timestamp(r["signal_date"]) == target
+        for r in rows
+    )
 
 
 def _entry_interval(entry_date_str: str) -> str:

@@ -430,6 +430,58 @@ one-bar data-quality issues, correctly skipped, same as always) plus the
 each, logged 18 new daily-precision decisions, and produced zero
 `[REVIEW ERROR]` lines.
 
+### Duplicate-signal guard hardened (2026-09-15)
+
+Found while auditing the journal before letting the daily Routine run
+unattended on real API calls, **before any further result existed to
+have tuned against**: 77 real decisions logged, 0 completed outcomes,
+same as the section above.
+
+**What was found**: 14 tickers have TWO real, independently-billed
+decisions logged for the same real calendar day, 2026-09-13 — one with
+`signal_date="2026-09-13"` (bare date), one with
+`signal_date="2026-09-13 00:00:00"` (full timestamp). These name the
+exact same price bar. `_already_signaled()`, the idempotency guard that
+exists specifically to stop this script from re-signaling (and
+re-billing) a `(ticker, signal_date)` pair it's already logged, compared
+`signal_date` as a **raw string** — so the format mismatch made it blind
+to the collision.
+
+**Root cause**: the bare-date format predates the fix noted in
+`workflow.py` (see its `entry_date`/`signal_date` comment) that switched
+`signal_date`/`entry_date` from `str(ts.date())` to `str(ts)` specifically
+so hourly bars on the same calendar date wouldn't collapse into one
+string. That fix was correct and is still needed — but it only changed
+what NEW rows look like; it did nothing to protect a later run's
+`_already_signaled()` check against OLD rows already sitting in the
+journal in the pre-fix format. The 2026-09-13 rows are exactly that: one
+run under the old format, a later run (after the fix landed) recomputing
+the same calendar day under the new format and not recognizing it as a
+duplicate.
+
+**Impact, checked directly against the journal**: zero exposure/PnL
+corruption — no ticker has two `BUY` rows for 2026-09-13 (the would-be
+second `BUY`s for `TRX-USD`/`NEAR-USD`/`LTC-USD`/`HBAR-USD` all came back
+`HOLD` on the second pass, either genuinely `FLAT` or blocked by the
+exposure cap, since real LLM calls aren't deterministic across separate
+invocations). What it DOES mean: ~14 duplicate real, billed LLM calls
+happened that day (~$0.12 wasted, one-time), and `total_real_decisions`
+in every report/dashboard is **inflated by 14** for as long as those rows
+exist. The journal is append-only/immutable by design (see "Journal
+separation" above) — these duplicate rows are NOT deleted or edited; this
+note is the record of what they are and why, the same policy already
+applied to other known data quirks in this file.
+
+**Fix**: `_already_signaled()` now parses both sides through
+`pd.Timestamp` before comparing, instead of comparing raw strings. This
+is a read-time fix — it makes the guard correctly recognize a duplicate
+regardless of which string format either the stored row or the freshly
+computed candidate happens to be in, closing this specific class of bug
+permanently rather than just for the one format pair that happened to
+collide here. Regression test added
+(`test_phase2.py::test_already_signaled_matches_across_date_string_formats`).
+Full suite: 83 passed, 3 skipped.
+
 ## What Would Prove This Wrong
 
 If any apparent profitability edge over buy-and-hold disappears once

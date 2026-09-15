@@ -252,6 +252,24 @@ class TestPaperTradingRunnerHelpers(unittest.TestCase):
         self.assertFalse(_already_signaled(rows, "BTC-USD", "2026-01-06"))
         self.assertFalse(_already_signaled(rows, "ETH-USD", "2026-01-05"))
 
+    def test_already_signaled_matches_across_date_string_formats(self):
+        # Regression test: a bare-date row ("2026-09-13", written by an
+        # older version of this code) and a full-timestamp query
+        # ("2026-09-13 00:00:00", what the current code always computes)
+        # name the exact same bar and must be treated as the same
+        # signal -- comparing them as raw strings previously let 14
+        # tickers get double-signaled (and double-billed) for 2026-09-13
+        # in the real journal before this was caught. See
+        # RESEARCH_SPEC.md's "Duplicate-signal guard hardened" note.
+        rows = [{"ticker": "BTC-USD", "signal_date": "2026-09-13"}]
+        self.assertTrue(_already_signaled(rows, "BTC-USD", "2026-09-13 00:00:00"))
+        # And the reverse direction (old-format row, old-format query;
+        # new-format row, new-format query) both still work as before.
+        rows2 = [{"ticker": "BTC-USD", "signal_date": "2026-09-13 00:00:00"}]
+        self.assertTrue(_already_signaled(rows2, "BTC-USD", "2026-09-13"))
+        # A genuinely different day must still not match, in either format.
+        self.assertFalse(_already_signaled(rows, "BTC-USD", "2026-09-14 00:00:00"))
+
     def test_build_benchmark_is_not_identical_to_any_single_ticker(self):
         btc = generate_synthetic_ohlcv("BTC-USD", n_bars=50, seed=6)
         eth = generate_synthetic_ohlcv("ETH-USD", n_bars=50, seed=7)
