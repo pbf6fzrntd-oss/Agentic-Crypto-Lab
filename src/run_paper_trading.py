@@ -33,10 +33,17 @@ invoke it periodically via cron / a scheduled task / by hand):
      and the current pending count.
 
 Run with:  python3 -m src.run_paper_trading — invoke on a schedule matching
-CONFIG.bar_interval (hourly cron for "1h", the current default; see
-RESEARCH_SPEC.md's "Hourly cadence" note) for signals to actually
-materialize each period; invoking more often than that is a harmless
-no-op (idempotency below skips it), less often just means missed periods.
+CONFIG.bar_interval (daily cron for "1d", the current default -- see
+RESEARCH_SPEC.md's "Reverted to daily cadence" note for why hourly was
+tried and reverted) for signals to actually materialize each period;
+invoking more often than that is a harmless no-op (idempotency below
+skips it), less often just means missed periods.
+
+Note: main() fetches every (ticker, interval) pair actually needed this
+run, not just CONFIG.universe x CONFIG.bar_interval -- an already-open
+position from a ticker that's left the universe, or from BEFORE
+bar_interval last changed, still needs its own (ticker, interval) fetched
+so the review pass can complete it. See _entry_interval()'s docstring.
 
 COST: each run makes one real Claude API call per ticker that gets a new
 signal (not one per review) -- ~$0.0087/call measured live, enforced
@@ -55,10 +62,25 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd
 
 from src.config import CONFIG
-from src.data import fetch_ohlcv, validate_ohlcv
+from src.data import _BARS_PER_DAY, fetch_ohlcv, validate_ohlcv
 from src.journal import load_journal
 from src.thesis import form_thesis_llm
 from src.workflow import run_review_step, run_signal_step
+
+
+def _holding_period_bars_for(interval: str) -> int:
+    """
+    CONFIG.holding_period_bars is only correct FOR CONFIG.bar_interval --
+    it's a bar count, not a calendar-time invariant, and different
+    intervals pack different real-world time into one bar (120 hourly
+    bars and 5 daily bars are both "5 real days", just expressed
+    differently). Needed when reviewing a position opened under a
+    since-changed interval (see _entry_interval): derive the equivalent
+    bar count at that OTHER interval by converting through the real-world
+    day count both express.
+    """
+    real_days = CONFIG.holding_period_bars / _BARS_PER_DAY[CONFIG.bar_interval]
+    return round(real_days * _BARS_PER_DAY[interval])
 
 
 def _already_signaled(rows: list[dict], ticker: str, signal_date: str) -> bool:
@@ -69,6 +91,25 @@ def _already_signaled(rows: list[dict], ticker: str, signal_date: str) -> bool:
     already in the journal.
     """
     return any(r["ticker"] == ticker and r["signal_date"] == signal_date for r in rows)
+
+
+def _entry_interval(entry_date_str: str) -> str:
+    """
+    Infer which bar_interval a position was entered under, from its
+    entry_date timestamp alone. A daily-bar entry always lands on midnight
+    (yfinance's daily index is normalized to 00:00:00); an hourly-bar
+    entry lands on whatever real hour it filled. Not stored explicitly on
+    JournalRecord (no schema change needed) -- this heuristic is exact for
+    every interval this project has ever used ("1d", "1h"), and exists so
+    that if Config.bar_interval ever changes again (as it just did, twice,
+    in one day), the review pass can still fetch the RIGHT granularity for
+    each already-open position instead of silently never resolving it. See
+    RESEARCH_SPEC.md's "Reverted to daily cadence" note for the concrete
+    case that motivated this: 6 of 10 open positions were entered at "1h"
+    precision when bar_interval reverted to "1d".
+    """
+    ts = pd.Timestamp(entry_date_str)
+    return "1d" if (ts.hour, ts.minute, ts.second) == (0, 0, 0) else "1h"
 
 
 def _select_signal_date(hist: pd.DataFrame) -> pd.Timestamp:
@@ -110,7 +151,9 @@ def _build_benchmark(histories: dict[str, pd.DataFrame]) -> pd.DataFrame:
     for hist in histories.values():
         base = hist["Open"].iloc[0]
         normalized.append(hist["Open"] / base * 100.0)
-    combined = pd.concat(normalized, axis=1).mean(axis=1).dropna()
+    # sort=False: legs are already-aligned real price series, not needing
+    # (and pandas 4.x now warning about implicitly getting) index sorting.
+    combined = pd.concat(normalized, axis=1, sort=False).mean(axis=1).dropna()
     bench = pd.DataFrame({"Open": combined})
     bench.index.name = "Date"
     return bench
@@ -126,52 +169,66 @@ def main() -> None:
     Path(journal_path).parent.mkdir(parents=True, exist_ok=True)
     existing_rows = load_journal(journal_path)
 
-    # A ticker can leave CONFIG.universe (as it just did: the 2026-09-15
-    # stablecoin/market-cap correction dropped DOT/ICP/ETC/ATOM) while it
-    # still has an open PENDING position from before the change. Fetching
-    # data for CONFIG.universe alone would silently orphan that position
-    # forever -- histories wouldn't have its ticker, so the review pass
-    # below (`if ticker not in histories: continue`) would skip it every
-    # run from then on, with no error, no signal, just a row stuck PENDING
-    # indefinitely. Fetch for the union instead: CONFIG.universe (eligible
-    # for NEW signals) plus any ticker with an already-open REAL position
-    # (wind-down only -- reviewed to completion, never signaled again).
-    open_position_tickers = {
-        r["ticker"]
-        for r in existing_rows
+    # Two independent reasons a (ticker, interval) pair outside
+    # CONFIG.universe x CONFIG.bar_interval might still need fetching this
+    # run, both because an already-open position must never be silently
+    # orphaned:
+    #   1. Ticker left the universe (e.g. the 2026-09-15 market-cap
+    #      correction dropped DOT/ICP/ETC/ATOM) while still holding an
+    #      open position.
+    #   2. bar_interval changed (e.g. the 2026-09-15 "1h" -> back to "1d"
+    #      reversion) while a position was open at the OLD interval -- its
+    #      entry_date won't exist in newly-fetched data at the new
+    #      interval, so review would silently never find it either.
+    # Fetching CONFIG.universe x CONFIG.bar_interval alone would miss
+    # both. Fetch every (ticker, interval) actually needed instead: each
+    # universe ticker at the current interval (eligible for NEW signals),
+    # plus each open position's own (ticker, its ENTRY interval) --
+    # wind-down only, reviewed to completion, never signaled again.
+    open_positions = [
+        r for r in existing_rows
         if r["action"] == "BUY"
         and r["outcome_status"] == "PENDING"
         and r.get("data_source", "").startswith("REAL")
-    }
-    wind_down_tickers = sorted(open_position_tickers - set(CONFIG.universe))
-    fetch_tickers = list(CONFIG.universe) + wind_down_tickers
+    ]
+    needed: dict[tuple[str, str], bool] = {(t, CONFIG.bar_interval): False for t in CONFIG.universe}  # False = eligible for new signals
+    for r in open_positions:
+        key = (r["ticker"], _entry_interval(r["entry_date"]))
+        needed.setdefault(key, True)  # True = wind-down only, never overrides a universe slot
 
-    histories: dict[str, pd.DataFrame] = {}
-    for ticker in fetch_tickers:
+    histories: dict[tuple[str, str], pd.DataFrame] = {}
+    for (ticker, interval), wind_down_only in needed.items():
         try:
-            hist = fetch_ohlcv(ticker, lookback_days=CONFIG.phase2_lookback_days, interval=CONFIG.bar_interval)
+            hist = fetch_ohlcv(ticker, lookback_days=CONFIG.phase2_lookback_days, interval=interval)
         except Exception as exc:  # noqa: BLE001 — never fabricate data on a fetch failure
-            print(f"[FETCH FAILED] {ticker}: {exc}")
+            print(f"[FETCH FAILED] {ticker} ({interval}): {exc}")
             continue
 
         problems = validate_ohlcv(hist, ticker)
         if problems:
-            print(f"[DATA VALIDATION FAILED] {ticker}: {problems}")
-            print(f"  Skipping {ticker} this run — not logging any decision on unvalidated data.")
+            print(f"[DATA VALIDATION FAILED] {ticker} ({interval}): {problems}")
+            print(f"  Skipping {ticker} ({interval}) this run — not acting on unvalidated data.")
             continue
 
-        histories[ticker] = hist
-        wind_down_note = " [wind-down only, no longer in universe]" if ticker in wind_down_tickers else ""
+        histories[(ticker, interval)] = hist
+        note = " [wind-down only]" if wind_down_only else ""
         print(
-            f"[OK] {ticker}: {len(hist)} real {CONFIG.bar_interval} bars validated "
-            f"(source={hist.attrs.get('data_source', 'REAL')}){wind_down_note}"
+            f"[OK] {ticker}: {len(hist)} real {interval} bars validated "
+            f"(source={hist.attrs.get('data_source', 'REAL')}){note}"
         )
 
     if not histories:
         print("No valid real data for any ticker this run. Aborting.")
         return
 
-    benchmark_history = _build_benchmark(histories)
+    # One benchmark per interval actually in use this run -- a record's
+    # review must compare against a benchmark built from the SAME
+    # granularity its own entry/exit dates live in.
+    intervals_used = {interval for (_, interval) in histories}
+    benchmarks: dict[str, pd.DataFrame] = {
+        interval: _build_benchmark({t: h for (t, i), h in histories.items() if i == interval})
+        for interval in intervals_used
+    }
 
     # --- Signal pass (steps 1-5), one decision-eligible date per ticker ---
     new_decisions = 0
@@ -180,28 +237,19 @@ def main() -> None:
     # risk_check() (via run_signal_step) so total exposure never exceeds
     # CONFIG.max_gross_exposure_fraction. MUST start from every still-open
     # (PENDING, REAL) position already in the journal, not just this run's
-    # new approvals: at daily cadence with a 5-bar hold, up to 5 positions
-    # per ticker could already be open and this cap would still never see
-    # them; at hourly cadence with a 120-bar hold, up to 120 could be open
-    # per ticker -- a severe blind spot if this only tracked same-run
-    # additions. Found and fixed 2026-09-15 alongside the move to hourly
-    # cadence, which is what made the gap large enough to matter in
-    # practice (it existed, unexercised, at daily cadence too).
-    gross_exposure = sum(
-        r["risk_size_fraction"]
-        for r in existing_rows
-        if r["action"] == "BUY"
-        and r["outcome_status"] == "PENDING"
-        and r.get("data_source", "").startswith("REAL")
-    )
+    # new approvals: with a 5-bar hold, up to 5 positions per ticker could
+    # already be open and this cap would still never see them if it only
+    # tracked same-run additions.
+    gross_exposure = sum(r["risk_size_fraction"] for r in open_positions)
     for ticker in CONFIG.universe:
-        # Only CONFIG.universe gets NEW signals -- wind_down_tickers are in
-        # `histories` purely so the review pass below can still complete
-        # them, never to open a fresh position (a ticker no longer in the
-        # universe must never get MORE exposure, only wind down existing).
-        if ticker not in histories:
+        # Only CONFIG.universe gets NEW signals -- a wind-down-only
+        # (ticker, interval) pair is in `histories` purely so the review
+        # pass below can still complete it, never to open a fresh position
+        # (a ticker/interval no longer current must only wind down, never
+        # gain MORE exposure).
+        hist = histories.get((ticker, CONFIG.bar_interval))
+        if hist is None:
             continue
-        hist = histories[ticker]
         if len(hist) < 6:
             print(f"[SKIP] {ticker}: not enough history yet for a signal ({len(hist)} bars).")
             continue
@@ -246,8 +294,6 @@ def main() -> None:
     completed_this_run = 0
     for row in rows:
         ticker = row["ticker"]
-        if ticker not in histories:
-            continue  # can't review without this ticker's real data this run
         if not row.get("data_source", "").startswith("REAL"):
             # This row's own entry decision was made on SYNTHETIC (Phase 1)
             # data, on a completely different price scale from the REAL
@@ -255,15 +301,22 @@ def main() -> None:
             # prices would produce a nonsense return (synthetic entry price
             # vs. real exit price) instead of a skip -- never mix scales.
             continue
+        if row["action"] != "BUY" or row["outcome_status"] != "PENDING":
+            continue  # nothing to review; avoids a wasted _entry_interval() parse below
+        interval = _entry_interval(row["entry_date"])
+        hist = histories.get((ticker, interval))
+        bench = benchmarks.get(interval)
+        if hist is None or bench is None:
+            continue  # can't review without this (ticker, interval)'s real data this run
         try:
             updated = run_review_step(
                 record=row,
-                full_history=histories[ticker],
-                holding_period_bars=CONFIG.holding_period_bars,
+                full_history=hist,
+                holding_period_bars=_holding_period_bars_for(interval),
                 journal_path=journal_path,
                 taker_fee_bps=CONFIG.taker_fee_bps,
                 slippage_bps=CONFIG.slippage_bps,
-                benchmark_history=benchmark_history,
+                benchmark_history=bench,
             )
         except Exception as exc:  # noqa: BLE001 — one bad/malformed row must not abort review for the rest
             print(f"[REVIEW ERROR] {ticker} {row['signal_date']}: {exc}")

@@ -298,5 +298,114 @@ class TestWindDownTickerRemovedFromUniverse(unittest.TestCase):
         self.assertEqual(called_tickers, {"BTC-USD"})
 
 
+def _hourly_history(ticker: str, start: str, n_bars: int = 200, start_price: float = 50_000.0) -> pd.DataFrame:
+    """An hourly-indexed price series, for simulating a position entered
+    while Config.bar_interval was "1h" before it reverted to "1d"."""
+    dates = pd.date_range(start=start, periods=n_bars, freq="h")
+    close = pd.Series(start_price + pd.RangeIndex(n_bars), index=dates, dtype=float)
+    df = pd.DataFrame({
+        "Open": close, "High": close + 1.0, "Low": close - 1.0,
+        "Close": close, "Volume": 1_000_000.0,
+    }, index=dates)
+    df.index.name = "Date"
+    df.attrs["ticker"] = ticker
+    df.attrs["data_source"] = "REAL:yfinance"
+    return df
+
+
+class TestIntervalRevertedWithOpenPosition(unittest.TestCase):
+    """
+    Regression coverage for the 2026-09-15 "1h" -> "1d" reversion: a
+    position entered while bar_interval was "1h" (an hourly-precision
+    entry_date, e.g. "2026-09-15 01:00:00") must still be reviewable to
+    completion after bar_interval reverts to "1d" -- main() must fetch
+    that position's own (ticker, "1h") data and use the "1h"-equivalent
+    holding period (120 bars = same 5 real days as 5 daily bars), NOT
+    silently strand it because newly-fetched daily data has no bar at
+    that exact hourly timestamp.
+    """
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.journal_path = str(Path(self.tmpdir.name) / "journal.jsonl")
+
+        # Daily data for the current interval -- used for NEW signals.
+        self.daily_hist = _real_looking_history("BTC-USD", n_bars=40, start_price=50_000.0)
+        # Hourly data for the legacy open position -- entry at hour 25,
+        # 120 bars later (hour 145) is well within the 200-bar series.
+        self.hourly_hist = _hourly_history("BTC-USD", start="2026-09-14 00:00:00", n_bars=200, start_price=50_000.0)
+        self.entry_date = self.hourly_hist.index[25]
+
+        self.test_config = Config(
+            universe=("BTC-USD",),
+            bar_interval="1d",  # reverted back from "1h"
+            phase2_lookback_days=40,
+            holding_period_bars=5,  # 5 daily bars = 5 real days, the CURRENT interval's value
+            position_size_fraction=0.1,
+            taker_fee_bps=10.0,
+            slippage_bps=5.0,
+            data_dir=self.tmpdir.name,
+            output_dir=self.tmpdir.name,
+            journal_path=self.journal_path,
+            dry_run_summary_path=str(Path(self.tmpdir.name) / "unused.csv"),
+        )
+
+        append_decision(self.journal_path, JournalRecord(
+            record_id="legacy-hourly-1",
+            run_timestamp="2026-09-15T01:00:00+00:00",
+            ticker="BTC-USD",
+            signal_date="2026-09-15 00:00:00",
+            thesis_direction="LONG", thesis_confidence=0.6,
+            thesis_reasoning="opened while bar_interval was \"1h\"",
+            thesis_source="LLM:claude-sonnet-5",
+            risk_approved=True, risk_size_fraction=0.1, risk_reason="r",
+            action="BUY",
+            entry_date=str(self.entry_date),  # hourly-precision, non-midnight
+            entry_price=float(self.hourly_hist["Open"].loc[self.entry_date]),
+            data_source="REAL:yfinance",
+        ))
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def _fetch_side_effect(self, ticker, lookback_days, interval):
+        if interval == "1d":
+            return self.daily_hist
+        if interval == "1h":
+            return self.hourly_hist
+        raise AssertionError(f"unexpected interval fetched: {interval!r}")
+
+    def test_legacy_hourly_position_still_completes_at_its_own_interval(self):
+        thesis_mock = MagicMock(return_value=Thesis(direction="FLAT", confidence=0.5, reasoning="x", source="LLM:x"))
+        with patch("src.run_paper_trading.CONFIG", self.test_config), \
+             patch("src.run_paper_trading.fetch_ohlcv", side_effect=self._fetch_side_effect), \
+             patch("src.run_paper_trading.validate_ohlcv", return_value=[]), \
+             patch("src.run_paper_trading.form_thesis_llm", thesis_mock):
+            rpt.main()
+
+        rows = {r["record_id"]: r for r in load_journal(self.journal_path)}
+        legacy = rows["legacy-hourly-1"]
+        self.assertEqual(legacy["outcome_status"], "COMPLETE")
+        # A sane return -- confirms it was scored against the matching
+        # hourly-scale data, not accidentally mixed with daily-scale data.
+        self.assertLess(abs(legacy["net_of_cost_return"]), 1.0)
+
+    def test_new_signal_still_uses_the_current_daily_interval(self):
+        thesis_mock = MagicMock(return_value=Thesis(direction="FLAT", confidence=0.5, reasoning="x", source="LLM:x"))
+        with patch("src.run_paper_trading.CONFIG", self.test_config), \
+             patch("src.run_paper_trading.fetch_ohlcv", side_effect=self._fetch_side_effect), \
+             patch("src.run_paper_trading.validate_ohlcv", return_value=[]), \
+             patch("src.run_paper_trading.form_thesis_llm", thesis_mock):
+            rpt.main()
+
+        rows = load_journal(self.journal_path)
+        new_rows = [r for r in rows if r["record_id"] != "legacy-hourly-1"]
+        self.assertEqual(len(new_rows), 1)
+        # The new signal's own signal_date must come from the DAILY
+        # series (midnight timestamp), not the hourly one.
+        signal_ts = pd.Timestamp(new_rows[0]["signal_date"])
+        self.assertEqual((signal_ts.hour, signal_ts.minute, signal_ts.second), (0, 0, 0))
+
+
 if __name__ == "__main__":
     unittest.main()

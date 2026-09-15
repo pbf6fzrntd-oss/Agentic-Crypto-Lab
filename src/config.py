@@ -49,17 +49,20 @@ class Config:
     # Benchmark for every comparison.
     benchmark: str = "buy_and_hold"
 
-    # Bar interval Phase 2 trades on. Switched from "1d" to "1h" on
-    # 2026-09-15 (with 19 real decisions logged and still ZERO completed
-    # outcomes -- before any result existed to have tuned against; see
-    # RESEARCH_SPEC.md's "Hourly cadence" note) to let the workflow signal
-    # once per ticker per HOUR instead of once per day. NOTE: Phase 1's
+    # Bar interval Phase 2 trades on. Went "1d" -> "1h" on 2026-09-14,
+    # reverted "1h" -> "1d" on 2026-09-15 (59 real decisions logged, still
+    # ZERO completed outcomes both times -- see RESEARCH_SPEC.md's "Hourly
+    # cadence" and "Reverted to daily cadence" notes for the full
+    # reasoning: the portfolio-exposure cap's fixed 10-slot ceiling means
+    # steady-state evidence throughput is ~2 completions/day regardless of
+    # signal frequency, so hourly signaling bought ~20x the cost for ~0x
+    # the evidence-accumulation speed). NOTE: Phase 1's
     # generate_synthetic_ohlcv() does not implement bar_interval -- it
     # always simulates daily bars regardless of this setting. That's a
     # known, deliberately-deferred gap: Phase 1 is a non-evidentiary
     # plumbing smoke test, so it no longer interval-matches Phase 2, but
     # nothing about its validity as a smoke test depends on that match.
-    bar_interval: str = "1h"
+    bar_interval: str = "1d"
 
     # How many bars of history Phase 1's dry run generates (n_bars passed
     # straight to generate_synthetic_ohlcv, which is always daily -- see
@@ -70,21 +73,20 @@ class Config:
 
     # Calendar days of real history fetch_ohlcv() pulls per ticker per
     # Phase 2 run (always calendar days, regardless of bar_interval -- see
-    # fetch_ohlcv()'s docstring). 60 days at "1h" is ~1440 bars per ticker,
-    # safely within yfinance's proven real depth for hourly crypto data
-    # (tested live: ~99 days available) with comfortable headroom above
-    # what CONTEXT_BARS + holding_period_bars actually need (60 + 120).
-    phase2_lookback_days: int = 60
+    # fetch_ohlcv()'s docstring). Was 60 (a deliberately tight budget while
+    # bar_interval="1h", to stay within yfinance's proven ~99-day real
+    # depth for hourly crypto data); restored to 400 -- matching the
+    # original pre-hourly design and comfortably within yfinance's daily
+    # depth -- now that bar_interval is back to "1d".
+    phase2_lookback_days: int = 400
 
-    # Holding period for a single decision, in bars. 120 hourly bars = 5
-    # real days -- kept at the SAME real-world hold length as the original
-    # daily-bar design (was 5 bars = 5 days) when bar_interval moved to
-    # "1h", so this remains the same hypothesis (a ~5-trading-day view,
-    # exactly what the LLM system prompt in thesis.py still says) decided
-    # on more frequently, not a shorter hold layered on top of a frequency
-    # change -- two research-parameter changes in one step would muddy
-    # which one any observed effect came from.
-    holding_period_bars: int = 120
+    # Holding period for a single decision, in bars. Was 120 (120 hourly
+    # bars = 5 real days) while bar_interval="1h"; reverted to 5 alongside
+    # the interval -- 5 DAILY bars = 5 real days, so this is the exact
+    # same real-world hold length either way, still matching the
+    # "~5 trading days" framing hardcoded into thesis.py's LLM system
+    # prompt.
+    holding_period_bars: int = 5
 
     # Fixed position-sizing rule (fraction of a notional portfolio per
     # decision). Mechanical, not optimized.
@@ -140,14 +142,13 @@ class Config:
     # Cost telemetry / circuit breaker for form_thesis_llm()'s real
     # Anthropic calls -- see src/cost_tracking.py. Every call is logged
     # here (append-only), and a new call is refused once today's estimated
-    # spend reaches max_daily_cost_usd. Raised from $5.00 to $15.00 when
-    # bar_interval moved to "1h": hourly signaling across the 20-ticker
-    # universe runs ~20x more calls/day (~480 vs ~20), estimated at
-    # ~$3.84/day in practice -- $15 keeps real headroom above that instead
-    # of sitting within ~$1 of tripping on a slightly-above-average day.
-    # Still a safety ceiling, not a tuned budget.
+    # spend reaches max_daily_cost_usd. Was raised $5.00 -> $15.00 for
+    # headroom while bar_interval="1h" (~480 calls/day); restored to $5.00
+    # now that daily cadence is back to ~20 calls/day (~$0.16-0.20/day in
+    # practice, per output/llm_cost_log.jsonl) -- still a safety ceiling,
+    # not a tuned budget.
     cost_log_path: str = "output/llm_cost_log.jsonl"
-    max_daily_cost_usd: float = 15.00
+    max_daily_cost_usd: float = 5.00
 
     # generate_report.py's output -- a human-readable summary of what the
     # REAL journal (journal_path) actually shows so far. Regenerated fresh

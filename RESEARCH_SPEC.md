@@ -93,10 +93,10 @@ from Phase 1 carries over into the Phase 2 count.
   below), fixed and liquid — chosen for data availability, not for any
   expected edge. The exact tuple lives in `config.py`.
 - **Benchmark:** Buy-and-hold on the same instrument over the same window
-- **Horizon:** Intraday / daily-swing decisions — bar interval moved from
-  daily to hourly on 2026-09-15 (see "Hourly cadence" below), still within
-  this originally-stated "intraday" scope. Exact bar interval set in
-  `config.py`.
+- **Horizon:** Intraday / daily-swing decisions — bar interval moved
+  daily -> hourly -> back to daily, all on 2026-09-15 (see "Hourly
+  cadence" and "Reverted to daily cadence" below). Exact bar interval set
+  in `config.py`; currently `"1d"`.
 - **Workflow steps (fixed order, do not reorder or skip):**
   1. `gather_data` — pull the most recent OHLCV bars available as of the
      decision timestamp only (no future bars)
@@ -373,6 +373,62 @@ portfolio-level gross-exposure cap `run_paper_trading.py` does — mirrors
 Phase 1's simpler per-ticker-independent backfill exactly, since
 date-synchronized cap-aware backfilling across 20 tickers was out of
 scope for a script whose numbers are non-evidentiary either way.
+
+### Reverted to daily cadence (2026-09-15)
+
+`Config.bar_interval` moved back `"1h"` -> `"1d"`, less than 24 hours
+after the "Hourly cadence" change above. Made with **77 real decisions
+logged and 0 completed outcomes** — still true after applying the
+reversion — before any result existed to have tuned against, same as
+every other change in this section.
+
+**Why**: the portfolio-exposure cap (`Config.max_gross_exposure_fraction`
+= 100%, `position_size_fraction` = 10% per name) creates a hard ceiling
+of 10 concurrently-open positions, each held for the same real-world 5
+days regardless of how often signals are evaluated. That means steady-
+state evidence throughput is capped at roughly 10 positions / 5 days ≈ 2
+completed outcomes per day, *independent of signal frequency* — hourly
+signaling fills the queue faster, it does not drain it faster. Discussed
+explicitly with the researcher: hourly cost ~20x more (~$3.84/day vs.
+~$0.17/day measured live) for no faster path to a completed-outcome
+count, so daily cadence was chosen as strictly better on the only axis
+that mattered (evidence per dollar), with no offsetting benefit to
+hourly identified. Revisiting hourly (or something between) remains
+worth doing later as its own deliberate research question — e.g. once
+daily-cadence evidence exists as a baseline to compare a higher-frequency
+variant against — just not as a way to reach the SAME falsification bar
+faster.
+
+**A real gap surfaced and fixed while reverting**: 6 of the 10 open
+positions at the time (`XRP-USD`, `SOL-USD`, `AVAX-USD`, `LINK-USD`,
+`NEAR-USD` x2, `UNI7083-USD`) were entered at hourly precision (e.g.
+`entry_date="2026-09-15 01:00:00"`) while `bar_interval="1h"`. Simply
+flipping `bar_interval` back to `"1d"` would have fetched only daily
+bars going forward — none of which land on that exact hourly timestamp —
+silently stranding those 6 positions `PENDING` forever, the same failure
+shape as the ticker-removal gap fixed in "Universe correction" above,
+just triggered by an interval change instead of a universe change.
+Generalized the fix instead of patching this one instance:
+`run_paper_trading.py` now infers which interval each open position was
+actually entered under (`_entry_interval()`, from whether its
+`entry_date` lands on midnight or a real hour — exact for every interval
+this project has used) and fetches each `(ticker, interval)` pair that's
+actually needed — every universe ticker at the CURRENT interval, plus
+every open position's own ticker at ITS entry interval — rather than
+just `CONFIG.universe x CONFIG.bar_interval`. `Config.holding_period_bars`
+is similarly only valid for `Config.bar_interval` specifically (it's a
+bar count, not a calendar-time invariant: 120 hourly bars and 5 daily
+bars are both "5 real days"), so a new `_holding_period_bars_for()`
+derives the equivalent bar count at any other interval via the real-day
+count both express, rather than hardcoding a second magic number that
+could drift out of sync with `Config.holding_period_bars`. This is now
+fully general — robust to `bar_interval` changing again in the future,
+not just a fix for this specific transition. Verified live: the reverted
+run correctly fetched all 20 universe tickers at `"1d"` (2 hit real
+one-bar data-quality issues, correctly skipped, same as always) plus the
+6 legacy positions at their own `"1h"`, printed `[wind-down only]` for
+each, logged 18 new daily-precision decisions, and produced zero
+`[REVIEW ERROR]` lines.
 
 ## What Would Prove This Wrong
 

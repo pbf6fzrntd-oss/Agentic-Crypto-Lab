@@ -40,9 +40,11 @@ src/
   run_dry_run.py        Phase 1 entry point
   run_paper_trading.py  Phase 2 entry point — one pass per invocation, no
                         internal loop; invoke periodically (cron/scheduler/
-                        manual, matching Config.bar_interval — hourly as of
-                        2026-09-15). NEVER places a real order — see the
-                        module docstring for the hard constraint.
+                        manual, matching Config.bar_interval — daily; see
+                        RESEARCH_SPEC.md's "Reverted to daily cadence"
+                        note for why hourly was tried and reverted).
+                        NEVER places a real order — see the module
+                        docstring for the hard constraint.
   generate_report.py    reads the REAL journal only, writes a human-
                         readable status report (Config.report_path)
   dashboard_data.py     emits the same report data as one JSON blob, plus
@@ -104,9 +106,11 @@ output/
 Two Claude Code Remote Routines run this project unattended (set up
 2026-09-14/15; see a session's Routines list to inspect/change them):
 
-- **Phase 2 hourly trading** — fires hourly, runs `run_paper_trading.py`
+- **Phase 2 daily trading** — fires once daily, runs `run_paper_trading.py`
   in a fresh session, commits any new `decision_journal.jsonl` rows back
-  to this branch (real evidence must survive container reclamation).
+  to this branch (real evidence must survive container reclamation). Ran
+  hourly for less than a day (2026-09-14/15) before reverting — see
+  RESEARCH_SPEC.md's "Reverted to daily cadence" note.
 - **Phase 2 daily report** — fires once daily, runs `generate_report.py`,
   commits `phase2_daily_report.md`, and refreshes a published dashboard
   artifact (a `Phase 2 Ledger` HTML page) with the same data via
@@ -148,12 +152,13 @@ python3 -m src.run_historical_validation   # "Phase 1.5" — real 12mo data, stu
 - **Cost.** Every `run_paper_trading.py` invocation that finds a new signal
   makes one real, billed `claude-sonnet-5` call per ticker (not per
   review) — at `output_config={"effort": "low"}`, ~$0.0087/call measured
-  live at hourly cadence (`Config.bar_interval = "1h"` as of 2026-09-15;
-  see RESEARCH_SPEC.md's "Hourly cadence" note), i.e. ~$0.17 for a full
-  20-ticker run and well under $5/day even run hourly (~480 calls/day).
-  `thesis.py` enforces a hard daily spend cap (`Config.max_daily_cost_usd`,
-  $15.00) via `cost_tracking.py` regardless — see `output/llm_cost_log.jsonl`
-  for the running total.
+  live, i.e. ~$0.17 for a full 20-ticker daily run (`Config.bar_interval
+  = "1d"`), well under $1/day in practice. `thesis.py` enforces a hard
+  daily spend cap (`Config.max_daily_cost_usd`, $5.00) via
+  `cost_tracking.py` regardless — see `output/llm_cost_log.jsonl` for the
+  running total. (Briefly ~$3.84/day at hourly cadence, 2026-09-14/15,
+  before reverting to daily — see RESEARCH_SPEC.md's "Reverted to daily
+  cadence" note.)
 - **Benchmark semantics.** Phase 2's `excess_return` is computed against an
   equal-weighted real-data buy-and-hold basket of the fixed universe, not
   literally the traded ticker's own price — see RESEARCH_SPEC.md's
