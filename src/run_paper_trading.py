@@ -32,11 +32,17 @@ invoke it periodically via cron / a scheduled task / by hand):
   4. Prints a concise summary: new decisions logged, outcomes completed,
      and the current pending count.
 
-Run with:  python3 -m src.run_paper_trading
+Run with:  python3 -m src.run_paper_trading — invoke on a schedule matching
+CONFIG.bar_interval (hourly cron for "1h", the current default; see
+RESEARCH_SPEC.md's "Hourly cadence" note) for signals to actually
+materialize each period; invoking more often than that is a harmless
+no-op (idempotency below skips it), less often just means missed periods.
 
 COST: each run makes one real Claude API call per ticker that gets a new
-signal (not one per review). See the researcher-facing cost estimate in the
-project's Phase 2 write-up / commit message before scheduling this.
+signal (not one per review) -- ~$0.0087/call measured live, enforced
+against a hard daily cap by thesis.py/cost_tracking.py regardless. See
+README.md's "Known limitations" -> Cost for the current per-run/per-day
+estimate.
 """
 
 from __future__ import annotations
@@ -122,7 +128,7 @@ def main() -> None:
     histories: dict[str, pd.DataFrame] = {}
     for ticker in CONFIG.universe:
         try:
-            hist = fetch_ohlcv(ticker, lookback_days=CONFIG.lookback_days, interval=CONFIG.bar_interval)
+            hist = fetch_ohlcv(ticker, lookback_days=CONFIG.phase2_lookback_days, interval=CONFIG.bar_interval)
         except Exception as exc:  # noqa: BLE001 — never fabricate data on a fetch failure
             print(f"[FETCH FAILED] {ticker}: {exc}")
             continue
@@ -135,7 +141,7 @@ def main() -> None:
 
         histories[ticker] = hist
         print(
-            f"[OK] {ticker}: {len(hist)} real daily bars validated "
+            f"[OK] {ticker}: {len(hist)} real {CONFIG.bar_interval} bars validated "
             f"(source={hist.attrs.get('data_source', 'REAL')})"
         )
 
@@ -149,21 +155,31 @@ def main() -> None:
     # --- Signal pass (steps 1-5), one decision-eligible date per ticker ---
     new_decisions = 0
     errored_tickers = []
-    # Portfolio-level gross exposure committed so far THIS run, across all
-    # tickers -- accumulated here and passed into risk_check() (via
-    # run_signal_step) so no single run can approve more than
-    # CONFIG.max_gross_exposure_fraction in aggregate, no matter how many
-    # tickers in the universe signal LONG on the same day. See
-    # config.py / risk.py for why this only matters once the universe is
-    # wide enough for that to happen.
-    gross_exposure = 0.0
+    # Portfolio-level gross exposure -- accumulated here and passed into
+    # risk_check() (via run_signal_step) so total exposure never exceeds
+    # CONFIG.max_gross_exposure_fraction. MUST start from every still-open
+    # (PENDING, REAL) position already in the journal, not just this run's
+    # new approvals: at daily cadence with a 5-bar hold, up to 5 positions
+    # per ticker could already be open and this cap would still never see
+    # them; at hourly cadence with a 120-bar hold, up to 120 could be open
+    # per ticker -- a severe blind spot if this only tracked same-run
+    # additions. Found and fixed 2026-09-15 alongside the move to hourly
+    # cadence, which is what made the gap large enough to matter in
+    # practice (it existed, unexercised, at daily cadence too).
+    gross_exposure = sum(
+        r["risk_size_fraction"]
+        for r in existing_rows
+        if r["action"] == "BUY"
+        and r["outcome_status"] == "PENDING"
+        and r.get("data_source", "").startswith("REAL")
+    )
     for ticker, hist in histories.items():
         if len(hist) < 6:
             print(f"[SKIP] {ticker}: not enough history yet for a signal ({len(hist)} bars).")
             continue
 
         as_of_date = _select_signal_date(hist)
-        signal_date = str(as_of_date.date())
+        signal_date = str(as_of_date)
 
         if _already_signaled(existing_rows, ticker, signal_date):
             print(f"[SKIP] {ticker}: already have a decision logged for {signal_date}.")

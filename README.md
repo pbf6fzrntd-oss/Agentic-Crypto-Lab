@@ -40,8 +40,15 @@ src/
   run_dry_run.py        Phase 1 entry point
   run_paper_trading.py  Phase 2 entry point — one pass per invocation, no
                         internal loop; invoke periodically (cron/scheduler/
-                        manual). NEVER places a real order — see the
+                        manual, matching Config.bar_interval — hourly as of
+                        2026-09-15). NEVER places a real order — see the
                         module docstring for the hard constraint.
+  generate_report.py    reads the REAL journal only, writes a human-
+                        readable status report (Config.report_path)
+  dashboard_data.py     emits the same report data as one JSON blob, plus
+                        open-positions/recent-decisions lists — what the
+                        published dashboard artifact (see below) refreshes
+                        itself from
 tests/
   test_pipeline.py        Phase 1 tests (no-lookahead, immutability, ordering)
   test_phase2.py           Phase 2 tests — fetch_ohlcv and form_thesis_llm
@@ -55,6 +62,9 @@ tests/
                            append tests for journal.py
   test_cost_tracking.py   cost-estimation and daily-cap tests for
                            cost_tracking.py
+  test_generate_report.py    report-computation tests, incl. the "not
+                           enough data for a read" framing
+  test_dashboard_data.py  tests for the dashboard's extra (non-report) data
   test_integration_live.py  Phase 2 tests against REAL services — skipped
                            unless RUN_LIVE_INTEGRATION_TESTS=1; costs real
                            money when it calls the LLM
@@ -70,7 +80,24 @@ output/
   llm_cost_log.jsonl            one row per real form_thesis_llm() call —
                                  tokens used + estimated USD cost; read by
                                  cost_tracking.py to enforce the daily cap
+  phase2_daily_report.md        generate_report.py's output — what the
+                                 REAL journal actually shows, regenerated
+                                 daily by a scheduled Routine
 ```
+
+## Scheduled automation
+
+Two Claude Code Remote Routines run this project unattended (set up
+2026-09-14/15; see a session's Routines list to inspect/change them):
+
+- **Phase 2 hourly trading** — fires hourly, runs `run_paper_trading.py`
+  in a fresh session, commits any new `decision_journal.jsonl` rows back
+  to this branch (real evidence must survive container reclamation).
+- **Phase 2 daily report** — fires once daily, runs `generate_report.py`,
+  commits `phase2_daily_report.md`, and refreshes a published dashboard
+  artifact (a `Phase 2 Ledger` HTML page) with the same data via
+  `dashboard_data.py`. Sends a push/email summary either way, flagged
+  `ATTENTION NEEDED` if anything errored.
 
 ## Run it
 
@@ -102,10 +129,12 @@ python3 -m src.run_paper_trading           # Phase 2 — real data, real LLM cal
   loosen quietly.
 - **Cost.** Every `run_paper_trading.py` invocation that finds a new signal
   makes one real, billed `claude-sonnet-5` call per ticker (not per
-  review) — at `output_config={"effort": "low"}`, well under a dollar per
-  day even across the full 20-ticker universe in practice. `thesis.py`
-  enforces a hard daily spend cap (`Config.max_daily_cost_usd`, default
-  $5.00) via `cost_tracking.py` regardless — see `output/llm_cost_log.jsonl`
+  review) — at `output_config={"effort": "low"}`, ~$0.0087/call measured
+  live at hourly cadence (`Config.bar_interval = "1h"` as of 2026-09-15;
+  see RESEARCH_SPEC.md's "Hourly cadence" note), i.e. ~$0.17 for a full
+  20-ticker run and well under $5/day even run hourly (~480 calls/day).
+  `thesis.py` enforces a hard daily spend cap (`Config.max_daily_cost_usd`,
+  $15.00) via `cost_tracking.py` regardless — see `output/llm_cost_log.jsonl`
   for the running total.
 - **Benchmark semantics.** Phase 2's `excess_return` is computed against an
   equal-weighted real-data buy-and-hold basket of the fixed universe, not

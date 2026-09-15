@@ -93,8 +93,10 @@ from Phase 1 carries over into the Phase 2 count.
   below), fixed and liquid — chosen for data availability, not for any
   expected edge. The exact tuple lives in `config.py`.
 - **Benchmark:** Buy-and-hold on the same instrument over the same window
-- **Horizon:** Intraday / daily-swing decisions (exact bar interval set in
-  `config.py`)
+- **Horizon:** Intraday / daily-swing decisions — bar interval moved from
+  daily to hourly on 2026-09-15 (see "Hourly cadence" below), still within
+  this originally-stated "intraday" scope. Exact bar interval set in
+  `config.py`.
 - **Workflow steps (fixed order, do not reorder or skip):**
   1. `gather_data` — pull the most recent OHLCV bars available as of the
      decision timestamp only (no future bars)
@@ -173,6 +175,95 @@ existing `REAL:*` rows stayed in `decision_journal.jsonl`. `run_dry_run.py`
 also now refuses (raises, rather than silently deleting) if the file at
 `phase1_journal_path` ever contains a `REAL:*` row, as a second line of
 defense in case that path is ever misconfigured.
+
+### Hourly cadence (2026-09-15)
+
+`Config.bar_interval` moved from `"1d"` to `"1h"`: `run_paper_trading.py`
+now signals once per ticker per HOUR instead of once per day. Recorded
+here for the same reason as every other change in this section — at the
+time of this change, **19 real decisions had been logged and 0 outcomes
+had completed** (still true when the run below added 20 more decisions,
+still 0 completed). This is a widening of a frozen parameter made before
+any real outcome existed to have tuned against, not a reaction to how the
+workflow was performing.
+
+What changed, and what deliberately did NOT:
+
+- **`holding_period_bars`: 5 → 120.** Rescaled to keep the SAME real-world
+  hold length (5 days) the original daily-bar design used — 120 hourly
+  bars = 5 real days, matching the "~5 trading days" framing that's still
+  hardcoded into `thesis.py`'s system prompt. This keeps the holding-period
+  *hypothesis* unchanged; only the frequency of new signals changed. Both
+  in one step would have made it impossible to attribute any observed
+  effect to either change individually.
+- **`CONTEXT_BARS` (thesis.py): left at 60, deliberately NOT rescaled.**
+  Under daily bars this was ~60 days (~2 months) of price history shown to
+  the model per call; under hourly bars it's now ~60 hours (~2.5 days) —
+  a real, substantially shorter lookback window, not a preserved one.
+  Scaling it to ~1440 bars to preserve the old real-world window was
+  considered and rejected: it would have meant ~24x more input tokens
+  (and ~24x the per-call cost) with no offsetting benefit established yet.
+  If hourly-cadence results end up looking meaningfully different from
+  daily-cadence ones, this shortened lookback is a real confound to keep
+  in mind before attributing the difference to cadence alone.
+- **`Config.phase2_lookback_days` (new field): 60.** Phase 2's real fetch
+  now pulls 60 calendar days (~1440 hourly bars) per ticker per run — kept
+  well within yfinance's proven real depth for hourly crypto data (tested
+  live: ~99 days actually available) with headroom above the 60+120=180
+  bars CONTEXT_BARS + holding_period_bars actually need. Split into its
+  own field, separate from the original `lookback_days` (kept as-is,
+  still Phase 1's synthetic bar count) — the two now mean genuinely
+  different things at different scales and conflating them further would
+  have made both harder to reason about.
+- **`Config.max_daily_cost_usd`: $5.00 → $15.00.** Purely a headroom
+  adjustment for ~20x more daily API calls (~20/day → ~480/day), not a
+  loosened safety posture — see `cost_tracking.py` / the commit that added
+  the cap. Real measured cost at hourly cadence: ~$0.0087/call, ~$0.17 for
+  a full 20-ticker run, comfortably under the new cap.
+- **A pre-existing gap in the portfolio-exposure cap was found and fixed
+  alongside this change, not caused by it:** `run_paper_trading.py`'s
+  gross-exposure tracking used to start at 0.0 every run, counting only
+  that run's own newly-approved positions — silently blind to exposure
+  from still-PENDING positions opened in *previous* runs. At daily cadence
+  with a 5-bar hold this was a real but narrow gap (up to 5 stacked
+  positions per ticker, 50% notional, could go uncounted); at hourly
+  cadence with a 120-bar hold the same gap would have allowed up to 120
+  stacked positions per ticker (1200% notional) to go uncounted — severe
+  enough that it had to be fixed as part of this change rather than
+  deferred. Gross exposure now starts from the sum of every currently-open
+  (`PENDING`, `REAL:*`) position already in the journal. Verified live:
+  the very first hourly run after this fix correctly blocked a
+  fully-qualifying LONG signal (XLM-USD, confidence 0.58) once accumulated
+  exposure — carried over from 4 pre-existing open positions plus 6 new
+  approvals earlier in the same run — reached exactly the 100% cap.
+- **Two accuracy bugs in what the model is actually told were found and
+  fixed alongside this change:** `thesis.py`'s system prompt and its
+  per-call user message both hardcoded the word "daily" ("recent daily
+  OHLCV price data", "Realized daily volatility") regardless of the actual
+  `bar_interval` — silently false, and materially misleading, the moment
+  bars became hourly (a 2% per-bar stdev reads as mild volatility for
+  daily bars, alarming for hourly ones). Both are now interval-aware.
+  Separately, the per-call CSV sent to the model used to show only the
+  bar's *date*, truncating the hour — meaning 24 different hourly bars on
+  the same calendar day would have rendered as 24 identical-looking rows.
+  Both are now full timestamps (also applied to `signal_date`/
+  `entry_date`/`exit_date` in the journal itself, for the same reason:
+  `_already_signaled`'s (ticker, date) uniqueness check and
+  `run_review_step`'s index lookup would otherwise have silently
+  collapsed every hour of a given day into one).
+- **A real, unrelated data-layer bug was found and fixed while verifying
+  this change:** `fetch_ohlcv()` used to slice `.tail(lookback_days)`
+  treating `lookback_days` as a bar count, not a calendar-day count —
+  correct by coincidence at "1d" (1 bar/day) but silently wrong at "1h"
+  (tested live: asking for 90 calendar days of hourly bars returned only
+  the last ~3.75 days). Fixed to convert calendar days to a bar count via
+  the interval before slicing.
+- **Phase 1 remains daily-only, deliberately un-migrated.**
+  `generate_synthetic_ohlcv()` always simulates daily bars regardless of
+  `Config.bar_interval` — a known, documented gap, not an oversight. Phase
+  1 is a non-evidentiary plumbing smoke test; it no longer interval-matches
+  Phase 2, but nothing about its validity as a smoke test depends on that
+  match, and rebuilding it for arbitrary intervals was out of scope here.
 
 ## What Would Prove This Wrong
 

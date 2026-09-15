@@ -15,7 +15,13 @@ subject of this project's research question.
 Model and context size were asked of, and confirmed by, the researcher
 before this was implemented (see RESEARCH_SPEC.md / the commit that added
 this function): model `claude-sonnet-5`, context = last CONTEXT_BARS (60)
-daily bars plus a few derived stats. Both are module-level constants below,
+bars (at whatever Config.bar_interval currently is -- daily bars
+originally, 60 HOURS of history since the 2026-09-15 move to "1h"; see
+RESEARCH_SPEC.md's "Hourly cadence" note for why CONTEXT_BARS was
+deliberately left at 60 rather than scaled up to preserve the old ~2-month
+real-world lookback -- scaling it would have meant ~24x more input tokens,
+and ~24x the per-call cost, per call) plus a few derived stats. Both
+CONTEXT_BARS and MIN_BARS_FOR_LLM_THESIS are module-level constants below,
 not CONFIG fields — CONFIG in config.py holds the *frozen* Phase 1
 parameters (universe, sizing, costs, workflow order) that this project
 commits not to tune against results; the thesis model/context choice is an
@@ -36,7 +42,20 @@ LLM_MODEL = "claude-sonnet-5"
 CONTEXT_BARS = 60  # bars of history shown to the model per call
 MIN_BARS_FOR_LLM_THESIS = 10  # below this, there's not enough signal to ask
 
-_SYSTEM_PROMPT = """\
+# Human-readable bar-granularity description, interpolated into the system
+# prompt below so it always matches Config.bar_interval -- this used to be
+# hardcoded as "daily", which became silently FALSE (and misleading to the
+# model about what it was looking at) the moment bar_interval moved to
+# "1h". The ~5-trading-day holding-period framing does NOT need to change
+# alongside it: holding_period_bars was deliberately rescaled (5 -> 120) to
+# keep meaning the same real-world ~5 days at any interval -- see
+# RESEARCH_SPEC.md's "Hourly cadence" note.
+_BAR_GRANULARITY_LABEL = {"1d": "daily", "1h": "hourly"}
+
+
+def _system_prompt(bar_interval: str) -> str:
+    granularity = _BAR_GRANULARITY_LABEL.get(bar_interval, bar_interval)
+    return f"""\
 You are the thesis-formation step in a mechanical research pipeline \
 studying whether a structured agent decision workflow beats passive \
 buy-and-hold on crypto, once volatility and costs are accounted for. This \
@@ -44,11 +63,11 @@ is Phase 2 of that study: forward paper trading. No real orders are ever \
 placed anywhere in this system; this is a hypothetical, research-only \
 exercise and nothing you say is investment advice.
 
-You will be shown recent daily OHLCV price data for one crypto asset, \
-ending at the most recent bar you may see. You have no visibility into \
-anything after it, and none will ever be given to you before its date has \
-passed. Form a short-term (about five trading days) directional view based \
-ONLY on the data provided in this message.
+You will be shown recent {granularity} OHLCV price data for one crypto \
+asset, ending at the most recent bar you may see. You have no visibility \
+into anything after it, and none will ever be given to you before its \
+date has passed. Form a short-term (about five trading days) directional \
+view based ONLY on the data provided in this message.
 
 Rules:
 - Do not use any knowledge of this asset's actual historical or future \
@@ -143,45 +162,57 @@ def stub_form_thesis(ticker: str, recent_bars) -> Thesis:
 
 
 def _derived_stats(window: pd.DataFrame) -> dict:
-    """A few cheap-to-compute descriptive stats over the given window."""
+    """
+    A few cheap-to-compute descriptive stats over the given window. The
+    volatility figure is the stdev of consecutive-BAR log returns, whatever
+    the bar interval is -- callers must label it accordingly (see
+    _build_user_message's `granularity`); calling it "daily" when bars are
+    actually hourly would badly mislead the model's risk read (a 2%
+    per-bar stdev reads as mild for daily bars, alarming for hourly ones).
+    """
     import numpy as np  # local import; only this helper needs numpy
 
     close = window["Close"]
-    daily_log_returns = np.log(close / close.shift(1)).dropna()
+    per_bar_log_returns = np.log(close / close.shift(1)).dropna()
     window_return = close.iloc[-1] / close.iloc[0] - 1
-    realized_vol = daily_log_returns.std() if len(daily_log_returns) > 1 else float("nan")
+    realized_vol = per_bar_log_returns.std() if len(per_bar_log_returns) > 1 else float("nan")
     window_high = window["High"].max()
     window_low = window["Low"].min()
     last_close = close.iloc[-1]
     return {
         "window_return": window_return,
-        "realized_daily_vol": realized_vol,
+        "realized_vol": realized_vol,
         "dist_from_high": last_close / window_high - 1,
         "dist_from_low": last_close / window_low - 1,
     }
 
 
-def _build_user_message(ticker: str, window: pd.DataFrame) -> str:
+def _build_user_message(ticker: str, window: pd.DataFrame, bar_interval: str) -> str:
     stats = _derived_stats(window)
-    as_of_date = window.index[-1].date()
+    granularity = _BAR_GRANULARITY_LABEL.get(bar_interval, bar_interval)
+    # Full timestamp (not just the date) throughout -- at "1h", date-only
+    # would show the same date on 24 different rows, losing the actual
+    # hour each bar is at and leaving "Data through: <date>" ambiguous
+    # about which of that day's 24 bars is actually the most recent one.
+    as_of = window.index[-1]
 
     lines = [
         f"Asset: {ticker}",
-        f"Data through: {as_of_date} (most recent bar available; nothing after this date exists in this call)",
-        f"Bars: last {len(window)} daily bars, oldest to newest",
+        f"Data through: {as_of} (most recent bar available; nothing after this timestamp exists in this call)",
+        f"Bars: last {len(window)} {granularity} bars, oldest to newest",
         "",
-        "Date,Open,High,Low,Close,Volume",
+        "Timestamp,Open,High,Low,Close,Volume",
     ]
-    for date, row in window.iterrows():
+    for ts, row in window.iterrows():
         lines.append(
-            f"{date.date()},{row['Open']:.2f},{row['High']:.2f},"
+            f"{ts},{row['Open']:.2f},{row['High']:.2f},"
             f"{row['Low']:.2f},{row['Close']:.2f},{row['Volume']:.0f}"
         )
     lines += [
         "",
         "Derived stats over this window:",
         f"- {len(window)}-bar return: {stats['window_return']:.2%}",
-        f"- Realized daily volatility (stdev of daily log returns): {stats['realized_daily_vol']:.2%}",
+        f"- Realized {granularity} volatility (stdev of {granularity} log returns): {stats['realized_vol']:.2%}",
         f"- Distance from window high: {stats['dist_from_high']:.2%}",
         f"- Distance from window low: {stats['dist_from_low']:.2%}",
     ]
@@ -247,7 +278,7 @@ def form_thesis_llm(ticker: str, recent_bars: pd.DataFrame) -> Thesis:
         )
 
     window = recent_bars.tail(CONTEXT_BARS)
-    user_message = _build_user_message(ticker, window)
+    user_message = _build_user_message(ticker, window, CONFIG.bar_interval)
 
     client = anthropic.Anthropic(api_key=api_key)
     response = client.messages.create(
@@ -259,7 +290,7 @@ def form_thesis_llm(ticker: str, recent_bars: pd.DataFrame) -> Thesis:
         # cost on a call this project makes routinely. Raise this if the
         # thesis quality looks shallow in practice.
         output_config={"effort": "low"},
-        system=[{"type": "text", "text": _SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
+        system=[{"type": "text", "text": _system_prompt(CONFIG.bar_interval), "cache_control": {"type": "ephemeral"}}],
         tools=[_THESIS_TOOL],
         tool_choice={"type": "tool", "name": "record_thesis"},
         messages=[{"role": "user", "content": user_message}],

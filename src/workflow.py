@@ -111,18 +111,28 @@ def run_signal_step(
     # the original project's next-open convention to avoid same-bar
     # execution lookahead. In Phase 1 dry run we only know entry price if
     # the next bar exists in our synthetic/historical frame.
+    #
+    # entry_date/signal_date/exit_date are stored as the FULL timestamp
+    # string (str(ts), not str(ts.date())) so this works correctly at any
+    # bar_interval, not just "1d" -- at "1h", two different bars on the
+    # same calendar date would collapse into the same signal_date/entry_date
+    # under date-only truncation, breaking _already_signaled's (ticker,
+    # date) uniqueness check and run_review_step's index lookup alike. For
+    # "1d" bars (whose timestamps are always midnight) this just means the
+    # stored string now reads "2026-09-15 00:00:00" instead of
+    # "2026-09-15" -- same day, same meaning, no behavior change.
     idx = full_history.index.get_loc(as_of_date)
     entry_date = None
     entry_price = None
     if action == "BUY" and idx + 1 < len(full_history):
-        entry_date = str(full_history.index[idx + 1].date())
+        entry_date = str(full_history.index[idx + 1])
         entry_price = float(full_history["Open"].iloc[idx + 1])
 
     record = journal_mod.JournalRecord(
         record_id=str(uuid.uuid4()),
         run_timestamp=run_timestamp or datetime.now(timezone.utc).isoformat(),
         ticker=ticker,
-        signal_date=str(as_of_date.date()),
+        signal_date=str(as_of_date),
         thesis_direction=thesis.direction,
         thesis_confidence=thesis.confidence,
         thesis_reasoning=thesis.reasoning,
@@ -187,7 +197,7 @@ def run_review_step(
             f"run_review_step({record['ticker']}, {record['record_id']}): computed "
             f"stock_return={stock_return:.4%} exceeds the {MAX_SANE_ABS_RETURN:.0%} sanity "
             f"bound (entry_price={entry_price!r} on {record['entry_date']}, "
-            f"exit_price={exit_price!r} on {exit_date.date()}). Refusing to write this outcome "
+            f"exit_price={exit_price!r} on {exit_date}). Refusing to write this outcome "
             f"-- this smells like mismatched data sources (e.g. a SYNTHETIC entry reviewed "
             f"against a REAL exit) or a bad price from the data provider, not a real market move."
         )
@@ -207,7 +217,7 @@ def run_review_step(
         journal_mod.append_outcome(
             journal_path,
             record_id=record["record_id"],
-            exit_date=str(exit_date.date()),
+            exit_date=str(exit_date),
             exit_price=exit_price,
             stock_return=stock_return,
             benchmark_return=benchmark_return,
@@ -218,7 +228,7 @@ def run_review_step(
     record = dict(record)
     record.update(
         outcome_status="COMPLETE",
-        exit_date=str(exit_date.date()),
+        exit_date=str(exit_date),
         exit_price=exit_price,
         stock_return=stock_return,
         benchmark_return=benchmark_return,

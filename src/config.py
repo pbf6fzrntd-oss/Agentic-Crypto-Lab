@@ -36,16 +36,42 @@ class Config:
     # Benchmark for every comparison.
     benchmark: str = "buy_and_hold"
 
-    # Bar interval used for the dry run. Daily bars keep Phase 1 simple and
-    # cheap; Phase 2 (forward paper trading) can move to intraday bars once
-    # the pipeline is proven.
-    bar_interval: str = "1d"
+    # Bar interval Phase 2 trades on. Switched from "1d" to "1h" on
+    # 2026-09-15 (with 19 real decisions logged and still ZERO completed
+    # outcomes -- before any result existed to have tuned against; see
+    # RESEARCH_SPEC.md's "Hourly cadence" note) to let the workflow signal
+    # once per ticker per HOUR instead of once per day. NOTE: Phase 1's
+    # generate_synthetic_ohlcv() does not implement bar_interval -- it
+    # always simulates daily bars regardless of this setting. That's a
+    # known, deliberately-deferred gap: Phase 1 is a non-evidentiary
+    # plumbing smoke test, so it no longer interval-matches Phase 2, but
+    # nothing about its validity as a smoke test depends on that match.
+    bar_interval: str = "1h"
 
-    # How many bars of history to fetch for the dry run.
+    # How many bars of history Phase 1's dry run generates (n_bars passed
+    # straight to generate_synthetic_ohlcv, which is always daily -- see
+    # bar_interval's note above). Phase 2's real fetch uses its own
+    # phase2_lookback_days below instead, since the two now mean different
+    # things at different scales.
     lookback_days: int = 400
 
-    # Holding period for a single decision, in bars.
-    holding_period_bars: int = 5
+    # Calendar days of real history fetch_ohlcv() pulls per ticker per
+    # Phase 2 run (always calendar days, regardless of bar_interval -- see
+    # fetch_ohlcv()'s docstring). 60 days at "1h" is ~1440 bars per ticker,
+    # safely within yfinance's proven real depth for hourly crypto data
+    # (tested live: ~99 days available) with comfortable headroom above
+    # what CONTEXT_BARS + holding_period_bars actually need (60 + 120).
+    phase2_lookback_days: int = 60
+
+    # Holding period for a single decision, in bars. 120 hourly bars = 5
+    # real days -- kept at the SAME real-world hold length as the original
+    # daily-bar design (was 5 bars = 5 days) when bar_interval moved to
+    # "1h", so this remains the same hypothesis (a ~5-trading-day view,
+    # exactly what the LLM system prompt in thesis.py still says) decided
+    # on more frequently, not a shorter hold layered on top of a frequency
+    # change -- two research-parameter changes in one step would muddy
+    # which one any observed effect came from.
+    holding_period_bars: int = 120
 
     # Fixed position-sizing rule (fraction of a notional portfolio per
     # decision). Mechanical, not optimized.
@@ -89,12 +115,20 @@ class Config:
     # Cost telemetry / circuit breaker for form_thesis_llm()'s real
     # Anthropic calls -- see src/cost_tracking.py. Every call is logged
     # here (append-only), and a new call is refused once today's estimated
-    # spend reaches max_daily_cost_usd. $5.00 is a generous safety ceiling,
-    # not a tuned budget: at effort=low with a 20-ticker universe, a full
-    # day's signal calls cost well under $1 in practice -- this exists to
-    # catch a runaway loop or misconfiguration, not to constrain normal use.
+    # spend reaches max_daily_cost_usd. Raised from $5.00 to $15.00 when
+    # bar_interval moved to "1h": hourly signaling across the 20-ticker
+    # universe runs ~20x more calls/day (~480 vs ~20), estimated at
+    # ~$3.84/day in practice -- $15 keeps real headroom above that instead
+    # of sitting within ~$1 of tripping on a slightly-above-average day.
+    # Still a safety ceiling, not a tuned budget.
     cost_log_path: str = "output/llm_cost_log.jsonl"
-    max_daily_cost_usd: float = 5.00
+    max_daily_cost_usd: float = 15.00
+
+    # generate_report.py's output -- a human-readable summary of what the
+    # REAL journal (journal_path) actually shows so far. Regenerated fresh
+    # on every run (like dry_run_summary_path); never itself read back by
+    # any other part of the pipeline.
+    report_path: str = "output/phase2_daily_report.md"
 
 
 CONFIG = Config()

@@ -43,16 +43,28 @@ REQUIRED_COLUMNS = ["Open", "High", "Low", "Close", "Volume"]
 
 # Interval strings this project uses (config.py `bar_interval`) mapped to
 # each provider's own interval/timeframe spelling. Both happen to already
-# match for "1d"; the maps exist so a future intraday interval (e.g. "1h")
-# is a one-line addition here, not a rewrite of fetch_ohlcv.
+# match for "1d"/"1h".
 _YFINANCE_INTERVAL = {"1d": "1d", "1h": "1h"}
 _CCXT_TIMEFRAME = {"1d": "1d", "1h": "1h"}
+
+# How many bars one calendar day contains at each interval -- used to
+# convert `lookback_days` (always a CALENDAR-day count, regardless of
+# interval) into a bar count for slicing. Getting this wrong doesn't error;
+# it silently returns far less history than asked for, which is exactly
+# what happened here before this was added: calling fetch_ohlcv(...,
+# lookback_days=90, interval="1h") returned the last 90 *hours* (~3.75
+# days), not 90 days, because both fetch functions used to .tail(lookback_days)
+# directly -- correct by coincidence for "1d" (1 bar/day), silently wrong
+# for "1h". Found and fixed 2026-09-15 while building hourly-cadence support.
+_BARS_PER_DAY = {"1d": 1, "1h": 24}
 
 
 def fetch_ohlcv(ticker: str, lookback_days: int, interval: str) -> pd.DataFrame:
     """
-    Fetch real OHLCV bars for `ticker` (e.g. "BTC-USD"), most recent
-    `lookback_days` bars, at `interval`. Tries yfinance first, falls back to
+    Fetch real OHLCV bars for `ticker` (e.g. "BTC-USD"), the most recent
+    `lookback_days` CALENDAR days of history (converted internally to a bar
+    count via _BARS_PER_DAY — always pass calendar days here, regardless of
+    `interval`), at `interval`. Tries yfinance first, falls back to
     ccxt/Coinbase on failure. Raises RuntimeError if both fail — callers
     must not silently substitute synthetic data for a failed real fetch.
     """
@@ -99,7 +111,8 @@ def _fetch_ohlcv_yfinance(ticker: str, lookback_days: int, interval: str) -> pd.
     if hist is None or hist.empty:
         return hist
 
-    hist = hist[REQUIRED_COLUMNS].tail(lookback_days).copy()
+    bars_needed = lookback_days * _BARS_PER_DAY.get(interval, 1)
+    hist = hist[REQUIRED_COLUMNS].tail(bars_needed).copy()
     hist.index = pd.to_datetime(hist.index)
     if hist.index.tz is not None:
         hist.index = hist.index.tz_localize(None)
@@ -117,18 +130,20 @@ def _fetch_ohlcv_ccxt(ticker: str, lookback_days: int, interval: str) -> pd.Data
     # are "BASE-QUOTE" (e.g. "BTC-USD").
     symbol = ticker.replace("-", "/")
 
+    bars_needed = lookback_days * _BARS_PER_DAY.get(interval, 1)
+
     exchange = ccxt.coinbase()
     since = exchange.parse8601(
         (pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=int(lookback_days * 1.2) + 10))
         .strftime("%Y-%m-%dT%H:%M:%SZ")
     )
-    bars = exchange.fetch_ohlcv(symbol, timeframe=timeframe, since=since, limit=lookback_days + 20)
+    bars = exchange.fetch_ohlcv(symbol, timeframe=timeframe, since=since, limit=bars_needed + 20)
     if not bars:
         return pd.DataFrame(columns=REQUIRED_COLUMNS)
 
     df = pd.DataFrame(bars, columns=["ts", "Open", "High", "Low", "Close", "Volume"])
     df["Date"] = pd.to_datetime(df["ts"], unit="ms")
-    df = df.set_index("Date")[REQUIRED_COLUMNS].tail(lookback_days)
+    df = df.set_index("Date")[REQUIRED_COLUMNS].tail(bars_needed)
     df.attrs["ticker"] = ticker
     df.attrs["data_source"] = "REAL:ccxt:coinbase"
     return df
