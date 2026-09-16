@@ -87,3 +87,10 @@ python3 -m src.run_paper_trading           # Phase 2 — real data, real LLM cal
 Only after enough Phase 2 outcomes exist to say something statistically
 meaningful, check the falsification bar from `RESEARCH_SPEC.md`: does any
 apparent edge survive realistic volatility, fees, and slippage? Not before.
+
+## Other projects in this repo
+
+`keena-growth-ops/` is an unrelated Next.js app: a weekly, real-data
+healthcare sales pipeline (15 leads/week from the CMS NPI Registry). It
+does not share code or data with the crypto research above — see
+`keena-growth-ops/README.md` for its own docs.
