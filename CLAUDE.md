@@ -41,8 +41,10 @@ Alongside marketing to the human AI-team lead above, we also market to the AI ag
 ## Team of agents in this project
 This project has specialist subagents in `.claude/agents/` for sales and marketing tasks: `content-seo`, `outbound-sdr`, `devrel-community`, `inbound-demo`, `customer-success`, `competitive-intel`. Delegate to the matching one when a task fits its description rather than doing the work in the main conversation — each keeps its output type isolated and consistent with this positioning doc. Slash commands in `.claude/commands/` wrap the common ones — see `GTM-QUICKSTART.md`.
 
-## Pipeline tracking
-Any agent that touches a named prospect or customer (`outbound-sdr`, `inbound-demo`, `customer-success`) logs/updates a row for them in `pipeline/PIPELINE.md` in the same turn it writes its draft — that file is the single view across all three funnel stages. See that file's header for the column format.
+## Pipeline tracking (local CRM)
+`pipeline/contacts.csv` is the single structured record of every prospect/customer, driven through `pipeline/crm.py` (stdlib-only Python, no network access — it does not send anything). Any agent that touches a named prospect or customer (`outbound-sdr`, `inbound-demo`, `customer-success`) logs/updates that company's record via `python3 pipeline/crm.py add ...` in the same turn it writes its draft, and checks `python3 pipeline/crm.py find "<company>"` first to avoid duplicate records. `pipeline/PIPELINE.md` is a generated human-readable snapshot (`crm.py snapshot`) — don't hand-edit it. Use `/pipeline` (or `python3 pipeline/crm.py stats` / `due`) to see overall status and what's due for follow-up.
+
+This is a local record-keeping tool only — there is no connected email/CRM provider in this workspace, so nothing here sends email or syncs to an external CRM. Drafts remain Markdown files you send yourself; see `GTM-QUICKSTART.md` if you want to wire in an actual send/sync integration later.
 
 ## Playbooks
 `playbooks/SMB-PLAYBOOK.md` and `playbooks/agent-discoverable-content.md` contain the default sequences, tone, and checklists for the SMB motion and the agent-discoverable content initiative described above. Agents producing outreach, content, or lead replies should follow them by default rather than improvising a generic B2B/enterprise motion.
