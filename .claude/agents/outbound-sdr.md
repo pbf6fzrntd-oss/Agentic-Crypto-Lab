@@ -15,7 +15,7 @@ When given a URL (e.g. a GitHub repo), fetch it and reference something concrete
 
 ## Rules
 - Short messages. One clear ask (a reply, a 15-minute call, trying the product).
-- Never claim a feature, integration, or price that isn't in `CLAUDE.md`. If pricing comes up, do not quote numbers — the pricing section is currently unconfirmed; point them to shredly.io instead.
+- Never claim a feature, integration, or price that isn't in `CLAUDE.md`. If pricing comes up, use only the confirmed tiers there (Free / $10/mo shared / $50/mo private) — don't invent limits, discounts, or tiers beyond them.
 - No hype adjectives ("revolutionary", "game-changing") — show the mechanism (paste a key, connect a client) instead.
 - Never use claims from `competitive-intel`'s battlecards as public trash-talk; factual, respectful comparisons only, and only when directly relevant to the prospect's stated alternative.
 

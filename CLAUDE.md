@@ -13,12 +13,12 @@ Shredly turns your existing APIs, databases, and internal tools into hosted MCP 
 ## Value proposition (one sentence)
 Turn an API or database into a hosted MCP server in minutes — no infra, no ops, no code to deploy — and plug it straight into Claude, Cursor, Continue, Windsurf, or any MCP client.
 
-## Pricing tiers (TODO — confirm with Shredly before using in outreach/content)
-- Free / trial: Google sign-in, no credit card required, key issued in seconds (confirmed from site copy; exact free-tier limits not yet confirmed)
-- Team: [not yet confirmed — get current pricing from shredly.io/pricing before quoting]
-- Enterprise: [not yet confirmed]
+## Pricing tiers
+- Free: Google sign-in, no credit card required, key issued in seconds. Runs on the shared MCP environment with base data/call limits.
+- Shared ($10/month): the shared MCP environment with expanded data/call limits beyond the free tier.
+- Private ($50/month): a private MCP server (not shared) with more granular controls (access, limits, isolation) than the shared environment.
 
-> Agents: do not state specific prices, seat counts, or usage limits until this section is filled in with confirmed numbers. Until then, direct prospects to shredly.io for current pricing rather than guessing.
+> Agents: these three tiers are confirmed. Still verify current numbers at shredly.io/pricing before quoting in a live deal in case they've since changed, and never invent tiers, limits, or discounts beyond what's listed here.
 
 ## Key differentiators vs. alternatives
 - vs. self-hosting: no containers, servers, or on-call — Shredly runs and monitors uptime for you; you keep the API/database, we run the MCP layer in front of it
