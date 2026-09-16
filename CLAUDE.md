@@ -46,5 +46,7 @@ This project has specialist subagents in `.claude/agents/` for sales and marketi
 
 This is a local record-keeping tool only — there is no connected email/CRM provider in this workspace, so nothing here sends email or syncs to an external CRM. Drafts remain Markdown files you send yourself; see `GTM-QUICKSTART.md` if you want to wire in an actual send/sync integration later.
 
+There is also a visual dashboard (`pipeline/dashboard_template.html` → generated `pipeline/dashboard.html`, published as an Artifact) — see the URL and refresh instructions in `GTM-QUICKSTART.md` / run `/dashboard`.
+
 ## Playbooks
 `playbooks/SMB-PLAYBOOK.md` and `playbooks/agent-discoverable-content.md` contain the default sequences, tone, and checklists for the SMB motion and the agent-discoverable content initiative described above. Agents producing outreach, content, or lead replies should follow them by default rather than improvising a generic B2B/enterprise motion.

@@ -15,6 +15,7 @@ A set of Claude Code subagents for Shredly.io's go-to-market, tuned for the curr
 | `/community <thread URL or announcement topic>` | Community reply or post (devrel-community) |
 | `/battlecard <competitor>` | Build/refresh a competitive battlecard (competitive-intel) |
 | `/pipeline [filter]` | Summarize the current pipeline |
+| `/dashboard` | Regenerate and republish the visual pipeline dashboard (see below) |
 
 You can also just ask naturally ("draft a cold email to...") — Claude delegates to the matching agent automatically.
 
@@ -42,6 +43,11 @@ python3 pipeline/crm.py snapshot          # regenerate pipeline/PIPELINE.md from
 ```
 
 `outbound-sdr`, `inbound-demo`, and `customer-success` all call this automatically as part of drafting — you generally don't need to run it by hand, but `/pipeline` and the commands above are there when you want to check status directly or fix a record.
+
+## Viewing it: the dashboard
+There's a visual frontend — a published page you can open from any device: **https://claude.ai/artifact/Xht7a7nDZj5oPGF5emo7FZ**
+
+It's a snapshot, not a live feed: it shows stat tiles per stage, an overdue-follow-up list, and a searchable/sortable contacts table, generated from `pipeline/contacts.csv` at the moment it's built. Run `/dashboard` any time to regenerate it from the latest data and republish it to that same link. It's private to this Claude account by default (share the link yourself if you want someone else to see it) — worth keeping in mind since it will show real prospect names/emails once the pipeline has contacts in it.
 
 ## Keeping it current
 - Pricing or positioning changed → edit `CLAUDE.md` (and `content/llms.txt` if it affects the public summary), everything downstream picks it up automatically.

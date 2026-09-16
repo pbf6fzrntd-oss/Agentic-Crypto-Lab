@@ -1,0 +1,383 @@
+<title>Shredly Pipeline</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+  :root {
+    --paper: #F2F5F2;
+    --surface: #FFFFFF;
+    --surface-sunken: #E7ECE8;
+    --border: #D7DED9;
+    --ink: #131A17;
+    --ink-2: #4A5650;
+    --ink-3: #7C8983;
+    --accent: #C2531A;
+    --accent-ink: #FFF8F3;
+    --accent-soft: #F5E3D6;
+
+    --stage-prospecting-bg: #EFE6DC; --stage-prospecting-fg: #6B5A48;
+    --stage-contacted-bg:   #F3D9C0; --stage-contacted-fg:   #7A4514;
+    --stage-replied-bg:     #EFBD8C; --stage-replied-fg:     #6E3B0C;
+    --stage-demo-bg:        #D98B47; --stage-demo-fg:        #3A1E06;
+    --stage-customer-bg:    #D3E8D8; --stage-customer-fg:    #235B37;
+    --stage-lost-bg:        #EAD3CC; --stage-lost-fg:        #7A3324;
+
+    color-scheme: light;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #14181A;
+      --surface: #1B2124;
+      --surface-sunken: #10151A;
+      --border: #2B3336;
+      --ink: #EDF1EE;
+      --ink-2: #B7C0BB;
+      --ink-3: #7E8B85;
+      --accent: #E38849;
+      --accent-ink: #1B120A;
+      --accent-soft: #3A2A1C;
+
+      --stage-prospecting-bg: #2A2F2C; --stage-prospecting-fg: #B7AC9E;
+      --stage-contacted-bg:   #4A3418; --stage-contacted-fg:   #F0C495;
+      --stage-replied-bg:     #5E3E14; --stage-replied-fg:     #F4CC9C;
+      --stage-demo-bg:        #7A4A18; --stage-demo-fg:        #FCE1C0;
+      --stage-customer-bg:    #1E3A28; --stage-customer-fg:    #9AD9AE;
+      --stage-lost-bg:        #402420; --stage-lost-fg:        #E7AEA0;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #14181A;
+    --surface: #1B2124;
+    --surface-sunken: #10151A;
+    --border: #2B3336;
+    --ink: #EDF1EE;
+    --ink-2: #B7C0BB;
+    --ink-3: #7E8B85;
+    --accent: #E38849;
+    --accent-ink: #1B120A;
+    --accent-soft: #3A2A1C;
+
+    --stage-prospecting-bg: #2A2F2C; --stage-prospecting-fg: #B7AC9E;
+    --stage-contacted-bg:   #4A3418; --stage-contacted-fg:   #F0C495;
+    --stage-replied-bg:     #5E3E14; --stage-replied-fg:     #F4CC9C;
+    --stage-demo-bg:        #7A4A18; --stage-demo-fg:        #FCE1C0;
+    --stage-customer-bg:    #1E3A28; --stage-customer-fg:    #9AD9AE;
+    --stage-lost-bg:        #402420; --stage-lost-fg:        #E7AEA0;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    padding-inline: 20px;
+    padding-block: 28px 48px;
+    max-width: 1180px;
+    margin-inline: auto;
+  }
+  h1, h2, h3 { font-family: 'Archivo', system-ui, sans-serif; text-wrap: balance; margin: 0; }
+  .mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+
+  header.page {
+    display: flex; flex-wrap: wrap; gap: 12px 24px;
+    align-items: baseline; justify-content: space-between;
+    margin-bottom: 28px;
+  }
+  header.page h1 { font-size: 28px; font-weight: 800; letter-spacing: -0.01em; }
+  header.page .meta { color: var(--ink-3); font-size: 13px; }
+  header.page .meta .mono { color: var(--ink-2); }
+
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 2px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 28px;
+  }
+  .stat-tile {
+    background: var(--surface);
+    padding: 16px 14px;
+    display: flex; flex-direction: column; gap: 6px;
+    position: relative;
+  }
+  .stat-tile .stripe { position: absolute; inset: 0 auto 0 0; width: 4px; }
+  .stat-tile .num { font-family: 'Archivo', sans-serif; font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat-tile .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-3); font-weight: 600; }
+
+  section { margin-bottom: 28px; }
+  section > h2 {
+    font-size: 13px; text-transform: uppercase; letter-spacing: 0.07em;
+    color: var(--ink-2); font-weight: 700; margin-bottom: 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  section > h2 .count-badge {
+    background: var(--surface-sunken); color: var(--ink-2);
+    border-radius: 999px; padding: 1px 8px; font-size: 11px; font-family: 'IBM Plex Mono', monospace;
+  }
+
+  .due-list { display: flex; flex-direction: column; gap: 8px; }
+  .due-row {
+    display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center;
+    background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--accent);
+    border-radius: 8px; padding: 10px 14px;
+  }
+  .due-row .company { font-weight: 600; }
+  .due-row .next-action { color: var(--ink-2); font-size: 13px; }
+  .due-row .when { margin-left: auto; font-size: 12px; color: var(--accent); font-weight: 600; }
+
+  .empty-state {
+    border: 1px dashed var(--border); border-radius: 10px;
+    padding: 28px 20px; text-align: center; color: var(--ink-2);
+    background: var(--surface);
+  }
+  .empty-state p { margin: 6px 0; font-size: 13px; }
+  .empty-state code {
+    background: var(--surface-sunken); padding: 1px 6px; border-radius: 4px;
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--ink);
+  }
+
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+  .toolbar input[type="search"] {
+    flex: 1 1 200px; min-width: 0;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 7px;
+    padding: 7px 10px; font: inherit; color: var(--ink);
+  }
+  .toolbar input[type="search"]:focus, .stage-chip:focus-visible, th button:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 1px;
+  }
+  .stage-chip {
+    border: 1px solid var(--border); background: var(--surface); color: var(--ink-2);
+    border-radius: 999px; padding: 5px 11px; font-size: 12px; font-weight: 600; cursor: pointer;
+  }
+  .stage-chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; }
+  table { border-collapse: collapse; width: 100%; min-width: 760px; background: var(--surface); }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: top; }
+  thead th { background: var(--surface-sunken); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-3); }
+  thead th button {
+    all: unset; cursor: pointer; display: inline-flex; gap: 4px; align-items: center;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: var(--surface-sunken); }
+  td.company-cell { font-weight: 600; }
+  td .sub { color: var(--ink-3); font-size: 12px; }
+  td.mono-cell { color: var(--ink-2); }
+
+  .pill {
+    display: inline-block; padding: 2px 9px; border-radius: 999px;
+    font-size: 11px; font-weight: 700; white-space: nowrap;
+  }
+
+  footer.page {
+    margin-top: 8px; padding-top: 16px; border-top: 1px solid var(--border);
+    color: var(--ink-3); font-size: 12px; display: flex; flex-wrap: wrap; gap: 6px 16px;
+  }
+  footer.page code { font-family: 'IBM Plex Mono', monospace; color: var(--ink-2); }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .stat-tile, .due-row, tbody tr { transition: background-color 0.15s ease; }
+  }
+</style>
+
+<header class="page">
+  <div>
+    <h1>Shredly Pipeline</h1>
+    <div class="meta">Outbound &middot; inbound &middot; customer-success, one view</div>
+  </div>
+  <div class="meta">Snapshot generated <span class="mono">__GENERATED_AT__</span> &middot; refresh with <code class="mono">python3 pipeline/crm.py dashboard</code></div>
+</header>
+
+<div class="stat-grid" id="statGrid"></div>
+
+<section id="dueSection">
+  <h2>Needs a follow-up <span class="count-badge" id="dueCount">0</span></h2>
+  <div class="due-list" id="dueList"></div>
+</section>
+
+<section>
+  <h2>All contacts <span class="count-badge" id="totalCount">0</span></h2>
+  <div class="toolbar">
+    <input type="search" id="search" placeholder="Search company or contact&hellip;" aria-label="Search contacts">
+    <div id="stageFilters" role="group" aria-label="Filter by stage"></div>
+  </div>
+  <div id="tableArea"></div>
+</section>
+
+<footer class="page">
+  <span>Data source: <code>pipeline/contacts.csv</code></span>
+  <span>This is a static snapshot, not a live feed &mdash; re-run the command above and republish to refresh.</span>
+</footer>
+
+<script>
+(function () {
+  var DATA = __PIPELINE_DATA__;
+
+  var STAGES = ["Prospecting", "Contacted", "Replied", "Demo/Trial", "Customer", "Churned", "Closed-lost"];
+  var STAGE_KEY = {
+    "Prospecting": "prospecting", "Contacted": "contacted", "Replied": "replied",
+    "Demo/Trial": "demo", "Customer": "customer", "Churned": "lost", "Closed-lost": "lost"
+  };
+  var CLOSED = { "Customer": true, "Churned": true, "Closed-lost": true };
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function todayISO() {
+    var d = new Date();
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+
+  function daysBetween(iso) {
+    var today = new Date(todayISO() + "T00:00:00");
+    var target = new Date(iso + "T00:00:00");
+    return Math.round((today - target) / 86400000);
+  }
+
+  // ---- stat tiles ----
+  var statOrder = ["Prospecting", "Contacted", "Replied", "Demo/Trial", "Customer", "__lost__"];
+  var statLabels = { "__lost__": "Churned / Lost" };
+  var counts = {};
+  DATA.forEach(function (r) {
+    var k = (r.stage === "Churned" || r.stage === "Closed-lost") ? "__lost__" : r.stage;
+    counts[k] = (counts[k] || 0) + 1;
+  });
+  var statGrid = document.getElementById("statGrid");
+  statOrder.forEach(function (key) {
+    var label = statLabels[key] || key;
+    var stageKey = key === "__lost__" ? "lost" : STAGE_KEY[key];
+    var tile = document.createElement("div");
+    tile.className = "stat-tile";
+    tile.innerHTML =
+      '<span class="stripe" style="background:var(--stage-' + stageKey + '-fg)"></span>' +
+      '<span class="num">' + (counts[key] || 0) + '</span>' +
+      '<span class="label">' + esc(label) + '</span>';
+    statGrid.appendChild(tile);
+  });
+
+  // ---- due list ----
+  var due = DATA.filter(function (r) {
+    return !CLOSED[r.stage] && r.next_action_date && r.next_action_date <= todayISO();
+  }).sort(function (a, b) { return a.next_action_date < b.next_action_date ? -1 : 1; });
+
+  document.getElementById("dueCount").textContent = due.length;
+  var dueList = document.getElementById("dueList");
+  var dueSection = document.getElementById("dueSection");
+  if (due.length === 0) {
+    dueList.innerHTML = '<div class="empty-state"><p>Nothing overdue right now.</p></div>';
+  } else {
+    due.forEach(function (r) {
+      var d = daysBetween(r.next_action_date);
+      var when = d === 0 ? "due today" : (d + (d === 1 ? " day overdue" : " days overdue"));
+      var row = document.createElement("div");
+      row.className = "due-row";
+      row.innerHTML =
+        '<span class="company">' + esc(r.company) + '</span>' +
+        '<span class="pill" style="background:var(--stage-' + STAGE_KEY[r.stage] + '-bg);color:var(--stage-' + STAGE_KEY[r.stage] + '-fg)">' + esc(r.stage) + '</span>' +
+        '<span class="next-action">' + esc(r.next_action || "") + '</span>' +
+        '<span class="when">' + esc(when) + '</span>';
+      dueList.appendChild(row);
+    });
+  }
+
+  // ---- stage filter chips ----
+  var activeStages = {};
+  var stageFilters = document.getElementById("stageFilters");
+  STAGES.forEach(function (s) {
+    if (!DATA.some(function (r) { return r.stage === s; })) return;
+    var chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "stage-chip";
+    chip.setAttribute("aria-pressed", "false");
+    chip.textContent = s;
+    chip.addEventListener("click", function () {
+      var pressed = chip.getAttribute("aria-pressed") === "true";
+      chip.setAttribute("aria-pressed", String(!pressed));
+      if (pressed) delete activeStages[s]; else activeStages[s] = true;
+      render();
+    });
+    stageFilters.appendChild(chip);
+  });
+
+  // ---- table ----
+  var sortKey = "next_action_date", sortDir = 1;
+  var COLS = [
+    { key: "company", label: "Company" },
+    { key: "contact_name", label: "Contact" },
+    { key: "stage", label: "Stage" },
+    { key: "source", label: "Source" },
+    { key: "last_touch_date", label: "Last Touch" },
+    { key: "next_action_date", label: "Next Action" },
+    { key: "owner_agent", label: "Owner" }
+  ];
+
+  function render() {
+    var q = (document.getElementById("search").value || "").toLowerCase();
+    var stageFilterKeys = Object.keys(activeStages);
+    var rows = DATA.filter(function (r) {
+      var matchesQ = !q || (r.company || "").toLowerCase().indexOf(q) !== -1 || (r.contact_name || "").toLowerCase().indexOf(q) !== -1;
+      var matchesStage = stageFilterKeys.length === 0 || activeStages[r.stage];
+      return matchesQ && matchesStage;
+    });
+    rows.sort(function (a, b) {
+      var av = a[sortKey] || "", bv = b[sortKey] || "";
+      return av < bv ? -1 * sortDir : av > bv ? 1 * sortDir : 0;
+    });
+
+    document.getElementById("totalCount").textContent = DATA.length;
+    var area = document.getElementById("tableArea");
+
+    if (DATA.length === 0) {
+      area.innerHTML =
+        '<div class="empty-state">' +
+        '<p><strong>No contacts yet.</strong></p>' +
+        '<p>Rows appear here automatically once <code>outbound-sdr</code>, <code>inbound-demo</code>, or <code>customer-success</code> log a company &mdash; try <code>/outreach &lt;company&gt;</code> or <code>/lead &lt;message&gt;</code> in Claude Code.</p>' +
+        '</div>';
+      return;
+    }
+    if (rows.length === 0) {
+      area.innerHTML = '<div class="empty-state"><p>No contacts match this search/filter.</p></div>';
+      return;
+    }
+
+    var thead = '<thead><tr>' + COLS.map(function (c) {
+      return '<th><button data-key="' + c.key + '">' + esc(c.label) + (sortKey === c.key ? (sortDir === 1 ? ' ↑' : ' ↓') : '') + '</button></th>';
+    }).join('') + '<th>Draft</th></tr></thead>';
+
+    var tbody = '<tbody>' + rows.map(function (r) {
+      var stageKey = STAGE_KEY[r.stage] || "prospecting";
+      return '<tr>' +
+        '<td class="company-cell">' + esc(r.company) + (r.persona_role ? '<div class="sub">' + esc(r.persona_role) + '</div>' : '') + '</td>' +
+        '<td>' + esc(r.contact_name) + (r.contact_email ? '<div class="sub">' + esc(r.contact_email) + '</div>' : '') + '</td>' +
+        '<td><span class="pill" style="background:var(--stage-' + stageKey + '-bg);color:var(--stage-' + stageKey + '-fg)">' + esc(r.stage || "—") + '</span></td>' +
+        '<td>' + esc(r.source || "—") + '</td>' +
+        '<td class="mono-cell mono">' + esc(r.last_touch_date || "—") + '</td>' +
+        '<td>' + esc(r.next_action || "—") + (r.next_action_date ? '<div class="sub mono">' + esc(r.next_action_date) + '</div>' : '') + '</td>' +
+        '<td>' + esc(r.owner_agent || "—") + '</td>' +
+        '<td class="mono-cell mono">' + esc(r.draft_path || "—") + '</td>' +
+        '</tr>';
+    }).join('') + '</tbody>';
+
+    area.innerHTML = '<div class="table-wrap"><table>' + thead + tbody + '</table></div>';
+
+    area.querySelectorAll("th button").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var key = btn.getAttribute("data-key");
+        if (sortKey === key) sortDir *= -1; else { sortKey = key; sortDir = 1; }
+        render();
+      });
+    });
+  }
+
+  document.getElementById("search").addEventListener("input", render);
+  render();
+})();
+</script>

@@ -11,12 +11,14 @@ Usage:
   python3 pipeline/crm.py stats
   python3 pipeline/crm.py find "acme"
   python3 pipeline/crm.py snapshot
+  python3 pipeline/crm.py dashboard   # writes pipeline/dashboard.html; publish it with the Artifact tool to view
 
 Run with -h on any subcommand for its options.
 """
 import argparse
 import csv
 import datetime
+import json
 import os
 import sys
 
@@ -42,6 +44,8 @@ CADENCE_DAYS = {1: 5, 2: 7}
 HERE = os.path.dirname(os.path.abspath(__file__))
 CSV_PATH = os.path.join(HERE, "contacts.csv")
 SNAPSHOT_PATH = os.path.join(HERE, "PIPELINE.md")
+DASHBOARD_TEMPLATE_PATH = os.path.join(HERE, "dashboard_template.html")
+DASHBOARD_PATH = os.path.join(HERE, "dashboard.html")
 
 
 def today():
@@ -208,6 +212,18 @@ def cmd_snapshot(args):
     print(f"Wrote {SNAPSHOT_PATH} ({len(rows)} contacts)")
 
 
+def cmd_dashboard(args):
+    rows = load_rows()
+    with open(DASHBOARD_TEMPLATE_PATH, encoding="utf-8") as f:
+        template = f.read()
+    generated_at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    html = template.replace("__PIPELINE_DATA__", json.dumps(rows)).replace("__GENERATED_AT__", generated_at)
+    with open(DASHBOARD_PATH, "w", encoding="utf-8") as f:
+        f.write(html)
+    print(f"Wrote {DASHBOARD_PATH} ({len(rows)} contacts). "
+          f"Publish/update it with the Artifact tool to view it as a page.")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -239,6 +255,9 @@ def main():
 
     p_snap = sub.add_parser("snapshot", help="Regenerate pipeline/PIPELINE.md from contacts.csv")
     p_snap.set_defaults(func=cmd_snapshot)
+
+    p_dash = sub.add_parser("dashboard", help="Regenerate pipeline/dashboard.html from contacts.csv (publish it with the Artifact tool to view)")
+    p_dash.set_defaults(func=cmd_dashboard)
 
     args = parser.parse_args()
     args.func(args)
