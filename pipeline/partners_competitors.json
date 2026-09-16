@@ -3,25 +3,25 @@
     {
       "name": "Glama",
       "url": "https://glama.ai",
-      "one_liner": "Battlecard pending — see battlecards/glama.md once published.",
+      "one_liner": "MCP registry + gateway + one-click hosting, bundled with an AI-model gateway. Broader platform, metered/credit pricing vs. Shredly's flat tiers; real gap on registry reach and enterprise logos.",
       "battlecard": "battlecards/glama.md"
     },
     {
       "name": "Smithery",
       "url": "https://smithery.ai",
-      "one_liner": "Battlecard pending — see battlecards/smithery.md once published.",
+      "one_liner": "MCP registry + hosted gateway for servers you write yourself; discontinued free hosting (Mar 2026). Hosts servers you build — Shredly builds the server from your API/DB, no code required.",
       "battlecard": "battlecards/smithery.md"
     },
     {
       "name": "Fast.io",
       "url": "https://fast.io",
-      "one_liner": "Battlecard pending — see battlecards/fast-io.md once published.",
+      "one_liner": "AI-first file storage (Box/Dropbox alternative) with an MCP layer over its own workspace — not a generic API-to-MCP host. Different job wearing similar \"MCP hosting\" marketing language.",
       "battlecard": "battlecards/fast-io.md"
     },
     {
       "name": "Monid",
       "url": "https://monid.ai",
-      "one_liner": "Battlecard pending — see battlecards/monid.md once published.",
+      "one_liner": "\"OpenRouter for agent tools\" — routes calls across 1,700+ third-party tools it doesn't own. Adjacent, not head-to-head: relevant only when a prospect wants many existing tools, not to host their own API.",
       "battlecard": "battlecards/monid.md"
     }
   ],
