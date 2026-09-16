@@ -49,12 +49,22 @@ There's a visual frontend — a published page you can open from any device: **h
 
 It's a snapshot, not a live feed: it shows stat tiles per stage, an overdue-follow-up list, and a searchable/sortable contacts table, generated from `pipeline/contacts.csv` at the moment it's built. Run `/dashboard` any time to regenerate it from the latest data and republish it to that same link. It's private to this Claude account by default (share the link yourself if you want someone else to see it) — worth keeping in mind since it will show real prospect names/emails once the pipeline has contacts in it.
 
+## Automated outbound lead sourcing
+A Routine ("Shredly Daily Outbound Lead Sourcing", trigger `trig_01MStbbLkLUZkhBpgbCsShve`) fires weekdays at 14:00 UTC into this same Claude Code session. Each run:
+- Sources 3-4 new, real, independently-verified SMB agent-tooling companies worldwide (no fabrication — everything traces to an actual web search result), rotating across Show HN, Product Hunt, YC batches, GitHub trending, and founding-engineer/Head-of-AI job postings so it doesn't keep re-hitting the same result set.
+- Checks `pipeline/crm.py find "<company>"` first to skip anything already tracked.
+- Delegates drafting to the `outbound-sdr` agent per company (LinkedIn DM unless a verified email actually exists — never a guessed email address), which logs the touch to the CRM itself.
+- Refreshes `pipeline/PIPELINE.md` and commits + pushes everything to this branch.
+- **Drafts and commits only — it never sends anything or opens a PR.** Review `outreach/` and the pipeline before actually sending any of it.
+
+To pause or stop it: ask Claude to disable/delete trigger `trig_01MStbbLkLUZkhBpgbCsShve`, or use the claude.ai Routines UI.
+
 ## Keeping it current
 - Pricing or positioning changed → edit `CLAUDE.md` (and `content/llms.txt` if it affects the public summary), everything downstream picks it up automatically.
 - A competitor's pricing/features changed → `/battlecard <name>` to refresh; other agents defer to that file rather than re-researching.
-- Run `/pipeline` (or `python3 pipeline/crm.py due`) periodically for overdue follow-ups — the agents log touches but don't chase follow-ups on a schedule themselves; you (or a scheduled Claude Code trigger, if you want to set one up) still have to ask for the next touch.
+- Run `/pipeline` (or `python3 pipeline/crm.py due`) periodically for overdue follow-ups on existing contacts — the daily Routine above only sources new leads, it doesn't chase existing ones through touch 2/3 yet.
 
 ## Known gaps / next steps if you want more automation
 - **No real email sending or external CRM sync.** This account has no Gmail/Outlook/HubSpot/Salesforce connector attached (checked at build time — only Google Drive is connected, and it's not enabled for GTM chats). Everything here produces Markdown drafts you copy-paste and send yourself, and `pipeline/contacts.csv` is local to this repo, not synced anywhere. If you connect an email or CRM connector later, ask to wire actual sending/syncing in — that should still confirm with you before each real send, since sending is visible to the recipient and hard to undo.
-- Follow-up timing (touch 2/3 of a sequence) is tracked (`crm.py due` will tell you it's time) but not auto-triggered — you still run `/outreach` again yourself, or set up a scheduled check-in to remind you.
+- Follow-up timing (touch 2/3 of a sequence on companies already in the pipeline) is tracked (`crm.py due` will tell you it's time) but not auto-triggered the way new-lead sourcing now is — you still run `/outreach` yourself for a follow-up touch, or ask to extend the daily Routine to cover it too.
 - `content/llms.txt` publishing to the live site is a manual step for whoever has shredly.io access — this repo only keeps the source copy current.
