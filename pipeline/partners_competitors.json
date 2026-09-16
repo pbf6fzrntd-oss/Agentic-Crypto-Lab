@@ -1,0 +1,61 @@
+{
+  "competitors": [
+    {
+      "name": "Glama",
+      "url": "https://glama.ai",
+      "one_liner": "Battlecard pending — see battlecards/glama.md once published.",
+      "battlecard": "battlecards/glama.md"
+    },
+    {
+      "name": "Smithery",
+      "url": "https://smithery.ai",
+      "one_liner": "Battlecard pending — see battlecards/smithery.md once published.",
+      "battlecard": "battlecards/smithery.md"
+    },
+    {
+      "name": "Fast.io",
+      "url": "https://fast.io",
+      "one_liner": "Battlecard pending — see battlecards/fast-io.md once published.",
+      "battlecard": "battlecards/fast-io.md"
+    },
+    {
+      "name": "Monid",
+      "url": "https://monid.ai",
+      "one_liner": "Battlecard pending — see battlecards/monid.md once published.",
+      "battlecard": "battlecards/monid.md"
+    }
+  ],
+  "partners": [
+    {
+      "name": "Cognee",
+      "url": "https://cognee.ai",
+      "one_liner": "Open-source agent memory layer ($7.5M seed) — complementary: a Shredly customer's agent needs memory (Cognee) and tool access (Shredly), not either/or."
+    },
+    {
+      "name": "Indexable",
+      "url": "https://indexable.dev",
+      "one_liner": "Agent sandbox infra (fork/snapshot environments in ~26ms) — complementary: sandboxing where the agent runs vs. Shredly's hosting of what it can call."
+    },
+    {
+      "name": "Rindler",
+      "url": "https://rindler.ai",
+      "one_liner": "Browser-driven translation layer turning websites into structured, agent-callable output — a natural thing to front with a Shredly-hosted MCP endpoint."
+    },
+    {
+      "name": "GodHands",
+      "url": "https://godhands.ai",
+      "one_liner": "Deterministic computer-use layer for legacy/non-API systems — complementary for the systems an API can't reach; Shredly covers the ones that can."
+    },
+    {
+      "name": "Keenable",
+      "url": "https://keenable.com",
+      "one_liner": "Agent-native web search index (100B+ documents, $26M seed) — complementary retrieval layer alongside Shredly-hosted tool access."
+    },
+    {
+      "name": "BenchSpan",
+      "url": "https://benchspan.com",
+      "one_liner": "Agent benchmarking/production-security platform — complementary: evaluate and secure agents that call Shredly-hosted tools."
+    }
+  ],
+  "note": "Partners are ecosystem/complementary infra surfaced during lead-sourcing research, not sales targets — see pipeline/contacts.csv for the actual sales pipeline. Competitors are real MCP-hosting or directly-adjacent alternatives; see battlecards/ for full detail and sourcing. Last curated 2026-09-16."
+}

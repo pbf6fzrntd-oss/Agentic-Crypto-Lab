@@ -46,6 +46,7 @@ CSV_PATH = os.path.join(HERE, "contacts.csv")
 SNAPSHOT_PATH = os.path.join(HERE, "PIPELINE.md")
 DASHBOARD_TEMPLATE_PATH = os.path.join(HERE, "dashboard_template.html")
 DASHBOARD_PATH = os.path.join(HERE, "dashboard.html")
+LANDSCAPE_PATH = os.path.join(HERE, "partners_competitors.json")
 
 
 def today():
@@ -214,13 +215,22 @@ def cmd_snapshot(args):
 
 def cmd_dashboard(args):
     rows = load_rows()
+    if os.path.exists(LANDSCAPE_PATH):
+        with open(LANDSCAPE_PATH, encoding="utf-8") as f:
+            landscape = json.load(f)
+    else:
+        landscape = {"competitors": [], "partners": [], "note": ""}
     with open(DASHBOARD_TEMPLATE_PATH, encoding="utf-8") as f:
         template = f.read()
     generated_at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    html = template.replace("__PIPELINE_DATA__", json.dumps(rows)).replace("__GENERATED_AT__", generated_at)
+    html = (template
+            .replace("__PIPELINE_DATA__", json.dumps(rows))
+            .replace("__LANDSCAPE_DATA__", json.dumps(landscape))
+            .replace("__GENERATED_AT__", generated_at))
     with open(DASHBOARD_PATH, "w", encoding="utf-8") as f:
         f.write(html)
-    print(f"Wrote {DASHBOARD_PATH} ({len(rows)} contacts). "
+    print(f"Wrote {DASHBOARD_PATH} ({len(rows)} contacts, "
+          f"{len(landscape.get('competitors', []))} competitors, {len(landscape.get('partners', []))} partners). "
           f"Publish/update it with the Artifact tool to view it as a page.")
 
 

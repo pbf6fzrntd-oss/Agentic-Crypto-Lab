@@ -162,6 +162,34 @@
     font-size: 11px; font-weight: 700; white-space: nowrap;
   }
 
+  .landscape-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+  }
+  @media (max-width: 640px) {
+    .landscape-grid { grid-template-columns: 1fr; }
+  }
+  .landscape-heading {
+    font-size: 13px; font-weight: 700; color: var(--ink);
+    display: flex; align-items: center; gap: 8px; margin-bottom: 4px;
+  }
+  .landscape-sub { font-size: 12px; color: var(--ink-3); margin: 0 0 12px; }
+  .landscape-list { display: flex; flex-direction: column; gap: 8px; }
+  .landscape-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px;
+  }
+  .landscape-card .name-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .landscape-card .name { font-weight: 700; font-size: 13px; }
+  .landscape-card .name a { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--ink-3); }
+  .landscape-card .one-liner { font-size: 12.5px; color: var(--ink-2); margin-top: 3px; line-height: 1.45; }
+  .landscape-card .battlecard-link { font-size: 11px; color: var(--ink-3); margin-top: 4px; }
+  .landscape-card .battlecard-link code { font-family: 'JetBrains Mono', monospace; }
+  .landscape-empty { font-size: 12.5px; color: var(--ink-3); font-style: italic; }
+  .landscape-note {
+    font-size: 11.5px; color: var(--ink-3); margin: 14px 0 0; padding-top: 10px;
+    border-top: 1px solid var(--border);
+  }
+
   footer.page {
     margin-top: 8px; padding-top: 16px; border-top: 1px solid var(--border);
     color: var(--ink-3); font-size: 12px; display: flex; flex-wrap: wrap; gap: 6px 16px;
@@ -200,6 +228,23 @@
   <div id="tableArea"></div>
 </section>
 
+<section>
+  <h2>Market landscape</h2>
+  <div class="landscape-grid">
+    <div class="landscape-col">
+      <h3 class="landscape-heading">Competitors <span class="count-badge" id="competitorCount">0</span></h3>
+      <p class="landscape-sub">Real MCP-hosting or directly-adjacent alternatives &mdash; full sourcing in <code>battlecards/</code>.</p>
+      <div id="competitorList" class="landscape-list"></div>
+    </div>
+    <div class="landscape-col">
+      <h3 class="landscape-heading">Partners <span class="count-badge" id="partnerCount">0</span></h3>
+      <p class="landscape-sub">Complementary ecosystem infra surfaced during lead research &mdash; not sales targets.</p>
+      <div id="partnerList" class="landscape-list"></div>
+    </div>
+  </div>
+  <p class="landscape-note" id="landscapeNote"></p>
+</section>
+
 <footer class="page">
   <span>Data source: <code>pipeline/contacts.csv</code></span>
   <span>This is a static snapshot, not a live feed &mdash; re-run the command above and republish to refresh.</span>
@@ -208,6 +253,7 @@
 <script>
 (function () {
   var DATA = __PIPELINE_DATA__;
+  var LANDSCAPE = __LANDSCAPE_DATA__;
 
   var STAGES = ["Prospecting", "Contacted", "Replied", "Demo/Trial", "Customer", "Churned", "Closed-lost"];
   var STAGE_KEY = {
@@ -404,5 +450,31 @@
 
   document.getElementById("search").addEventListener("input", render);
   render();
+
+  // ---- market landscape (competitors / partners) ----
+  function renderLandscapeList(containerId, countId, items, opts) {
+    var container = document.getElementById(containerId);
+    document.getElementById(countId).textContent = items.length;
+    if (!items.length) {
+      container.innerHTML = '<p class="landscape-empty">None yet.</p>';
+      return;
+    }
+    container.innerHTML = items.map(function (it) {
+      var nameHtml = it.url
+        ? '<a href="' + esc(it.url) + '" target="_blank" rel="noopener">' + esc(it.name) + '</a>'
+        : esc(it.name);
+      var battlecardHtml = (opts && opts.showBattlecard && it.battlecard)
+        ? '<div class="battlecard-link">Full battlecard: <code>' + esc(it.battlecard) + '</code></div>'
+        : '';
+      return '<div class="landscape-card">' +
+        '<div class="name-row"><span class="name">' + nameHtml + '</span></div>' +
+        '<div class="one-liner">' + esc(it.one_liner || '') + '</div>' +
+        battlecardHtml +
+        '</div>';
+    }).join('');
+  }
+  renderLandscapeList('competitorList', 'competitorCount', LANDSCAPE.competitors || [], { showBattlecard: true });
+  renderLandscapeList('partnerList', 'partnerCount', LANDSCAPE.partners || []);
+  document.getElementById('landscapeNote').textContent = LANDSCAPE.note || '';
 })();
 </script>
