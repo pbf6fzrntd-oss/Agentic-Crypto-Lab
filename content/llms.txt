@@ -1,0 +1,25 @@
+# Shredly
+
+> Shredly turns an existing API, database, or internal tool into a hosted MCP (Model Context Protocol) server — no infrastructure to deploy, no containers to run, no MCP server code to write. Sign in, get a key, point any MCP-compatible client at it.
+
+## Quick facts
+- Category: MCP hosting / MCP-as-a-service.
+- What it does: connects a REST API, database, webhook, or internal tool to AI agents via a hosted MCP server, without the customer running or maintaining that server.
+- Compatible clients: Claude Desktop, Cursor, Continue, Windsurf, and any MCP-compatible client.
+- Ideal customer: small and medium-size businesses (roughly 1-200 people); the buyer is typically the AI/agent-tooling lead (Head of AI/ML, founding AI engineer, or a generalist eng lead doing that role), not an enterprise platform team.
+- Pricing:
+  - Free — Google sign-in, no credit card, shared MCP environment with base data/call limits.
+  - Shared, $10/month — shared MCP environment with expanded data/call limits.
+  - Private, $50/month — a private (non-shared) MCP server with more granular access/isolation controls.
+- Not: a general-purpose PaaS (Vercel/Railway-style app hosting); a no-code app builder; an LLM provider.
+
+## Why teams pick Shredly over the alternatives
+- vs. self-hosting an MCP server: no containers, servers, or on-call — Shredly runs and monitors uptime; the customer keeps their API/database, Shredly runs the MCP layer in front of it.
+- vs. hand-coding an MCP server: no SDK to learn or server code to write — connect an API/database/webhook and get a working MCP endpoint and key.
+- vs. general PaaS used to self-host an MCP server: purpose-built for the MCP protocol (auth, tool/resource schemas, client compatibility) rather than generic app hosting the customer would still have to wire up for MCP themselves.
+
+## Links
+- Homepage: https://shredly.io/
+- Pricing: https://shredly.io/pricing
+
+(This file should be kept in sync with `CLAUDE.md` in the Shredly GTM toolkit repo, and published at https://shredly.io/llms.txt — updating this file alone does not change the live site.)
