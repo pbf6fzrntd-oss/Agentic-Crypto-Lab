@@ -1,91 +1,61 @@
 <title>Shredly Pipeline</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 
+  /*
+    Deliberately single-theme (dark), matching shredly.io's own site, which
+    is dark-only — this isn't an omission of a light mode, it's brand match.
+  */
   :root {
-    --paper: #F2F5F2;
-    --surface: #FFFFFF;
-    --surface-sunken: #E7ECE8;
-    --border: #D7DED9;
-    --ink: #131A17;
-    --ink-2: #4A5650;
-    --ink-3: #7C8983;
-    --accent: #C2531A;
-    --accent-ink: #FFF8F3;
-    --accent-soft: #F5E3D6;
+    --bg: #0A0A0B;
+    --surface: #131316;
+    --surface-sunken: #0F0F11;
+    --border: #26262B;
+    --ink: #F5F5F6;
+    --ink-2: #A1A1AA;
+    --ink-3: #71717A;
+    --accent: #6366F1;
+    --accent-soft: #9C9DF7;
+    --accent-ink: #FFFFFF;
+    --accent-wash: #1A1A2E;
 
-    --stage-prospecting-bg: #EFE6DC; --stage-prospecting-fg: #6B5A48;
-    --stage-contacted-bg:   #F3D9C0; --stage-contacted-fg:   #7A4514;
-    --stage-replied-bg:     #EFBD8C; --stage-replied-fg:     #6E3B0C;
-    --stage-demo-bg:        #D98B47; --stage-demo-fg:        #3A1E06;
-    --stage-customer-bg:    #D3E8D8; --stage-customer-fg:    #235B37;
-    --stage-lost-bg:        #EAD3CC; --stage-lost-fg:        #7A3324;
+    --stage-prospecting-bg: #19191D; --stage-prospecting-fg: #9A9AA3;
+    --stage-contacted-bg:   #1C1B30; --stage-contacted-fg:   #9C9DF7;
+    --stage-replied-bg:     #221F3E; --stage-replied-fg:     #A5A3FA;
+    --stage-demo-bg:        #292352; --stage-demo-fg:        #B8B4FF;
+    --stage-customer-bg:    #12261B; --stage-customer-fg:    #4ADE80;
+    --stage-lost-bg:        #2C1620; --stage-lost-fg:        #FB7185;
 
-    color-scheme: light;
-  }
-
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --paper: #14181A;
-      --surface: #1B2124;
-      --surface-sunken: #10151A;
-      --border: #2B3336;
-      --ink: #EDF1EE;
-      --ink-2: #B7C0BB;
-      --ink-3: #7E8B85;
-      --accent: #E38849;
-      --accent-ink: #1B120A;
-      --accent-soft: #3A2A1C;
-
-      --stage-prospecting-bg: #2A2F2C; --stage-prospecting-fg: #B7AC9E;
-      --stage-contacted-bg:   #4A3418; --stage-contacted-fg:   #F0C495;
-      --stage-replied-bg:     #5E3E14; --stage-replied-fg:     #F4CC9C;
-      --stage-demo-bg:        #7A4A18; --stage-demo-fg:        #FCE1C0;
-      --stage-customer-bg:    #1E3A28; --stage-customer-fg:    #9AD9AE;
-      --stage-lost-bg:        #402420; --stage-lost-fg:        #E7AEA0;
-      color-scheme: dark;
-    }
-  }
-  :root[data-theme="dark"] {
-    --paper: #14181A;
-    --surface: #1B2124;
-    --surface-sunken: #10151A;
-    --border: #2B3336;
-    --ink: #EDF1EE;
-    --ink-2: #B7C0BB;
-    --ink-3: #7E8B85;
-    --accent: #E38849;
-    --accent-ink: #1B120A;
-    --accent-soft: #3A2A1C;
-
-    --stage-prospecting-bg: #2A2F2C; --stage-prospecting-fg: #B7AC9E;
-    --stage-contacted-bg:   #4A3418; --stage-contacted-fg:   #F0C495;
-    --stage-replied-bg:     #5E3E14; --stage-replied-fg:     #F4CC9C;
-    --stage-demo-bg:        #7A4A18; --stage-demo-fg:        #FCE1C0;
-    --stage-customer-bg:    #1E3A28; --stage-customer-fg:    #9AD9AE;
-    --stage-lost-bg:        #402420; --stage-lost-fg:        #E7AEA0;
     color-scheme: dark;
   }
 
   * { box-sizing: border-box; }
   body {
-    background: var(--paper);
+    background: var(--bg);
     color: var(--ink);
-    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    font-family: 'Inter', system-ui, sans-serif;
     padding-inline: 20px;
     padding-block: 28px 48px;
     max-width: 1180px;
     margin-inline: auto;
   }
-  h1, h2, h3 { font-family: 'Archivo', system-ui, sans-serif; text-wrap: balance; margin: 0; }
-  .mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+  h1, h2, h3 { font-family: 'Inter', system-ui, sans-serif; text-wrap: balance; margin: 0; }
+  .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
 
   header.page {
-    display: flex; flex-wrap: wrap; gap: 12px 24px;
-    align-items: baseline; justify-content: space-between;
-    margin-bottom: 28px;
+    display: flex; flex-wrap: wrap; gap: 14px 24px;
+    align-items: center; justify-content: space-between;
+    margin-bottom: 28px; padding-bottom: 20px; border-bottom: 1px solid var(--border);
   }
-  header.page h1 { font-size: 28px; font-weight: 800; letter-spacing: -0.01em; }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand .mark {
+    width: 26px; height: 26px; border-radius: 7px; background: var(--bg);
+    border: 1px solid var(--border); color: var(--ink);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 13px; flex-shrink: 0;
+  }
+  header.page h1 { font-size: 24px; font-weight: 800; letter-spacing: -0.01em; text-transform: lowercase; }
+  header.page h1 .accent { color: var(--accent-soft); }
   header.page .meta { color: var(--ink-3); font-size: 13px; }
   header.page .meta .mono { color: var(--ink-2); }
 
@@ -106,7 +76,7 @@
     position: relative;
   }
   .stat-tile .stripe { position: absolute; inset: 0 auto 0 0; width: 4px; }
-  .stat-tile .num { font-family: 'Archivo', sans-serif; font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat-tile .num { font-family: 'Inter', sans-serif; font-size: 30px; font-weight: 800; font-variant-numeric: tabular-nums; }
   .stat-tile .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-3); font-weight: 600; }
 
   section { margin-bottom: 28px; }
@@ -116,8 +86,8 @@
     display: flex; align-items: center; gap: 8px;
   }
   section > h2 .count-badge {
-    background: var(--surface-sunken); color: var(--ink-2);
-    border-radius: 999px; padding: 1px 8px; font-size: 11px; font-family: 'IBM Plex Mono', monospace;
+    background: var(--surface-sunken); color: var(--ink-2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 1px 8px; font-size: 11px; font-family: 'JetBrains Mono', monospace;
   }
 
   .due-list { display: flex; flex-direction: column; gap: 8px; }
@@ -138,7 +108,7 @@
   .empty-state p { margin: 6px 0; font-size: 13px; }
   .empty-state code {
     background: var(--surface-sunken); padding: 1px 6px; border-radius: 4px;
-    font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--ink);
+    font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--ink);
   }
 
   .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
@@ -152,7 +122,7 @@
   }
   .stage-chip {
     border: 1px solid var(--border); background: var(--surface); color: var(--ink-2);
-    border-radius: 999px; padding: 5px 11px; font-size: 12px; font-weight: 600; cursor: pointer;
+    border-radius: 8px; padding: 5px 11px; font-size: 12px; font-weight: 600; cursor: pointer;
   }
   .stage-chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 
@@ -170,7 +140,7 @@
   td.mono-cell { color: var(--ink-2); }
 
   .pill {
-    display: inline-block; padding: 2px 9px; border-radius: 999px;
+    display: inline-block; padding: 2px 9px; border-radius: 6px;
     font-size: 11px; font-weight: 700; white-space: nowrap;
   }
 
@@ -178,7 +148,7 @@
     margin-top: 8px; padding-top: 16px; border-top: 1px solid var(--border);
     color: var(--ink-3); font-size: 12px; display: flex; flex-wrap: wrap; gap: 6px 16px;
   }
-  footer.page code { font-family: 'IBM Plex Mono', monospace; color: var(--ink-2); }
+  footer.page code { font-family: 'JetBrains Mono', monospace; color: var(--ink-2); }
 
   @media (prefers-reduced-motion: no-preference) {
     .stat-tile, .due-row, tbody tr { transition: background-color 0.15s ease; }
@@ -187,8 +157,11 @@
 
 <header class="page">
   <div>
-    <h1>Shredly Pipeline</h1>
-    <div class="meta">Outbound &middot; inbound &middot; customer-success, one view</div>
+    <div class="brand">
+      <span class="mark">S</span>
+      <h1>shredly <span class="accent">pipeline</span></h1>
+    </div>
+    <div class="meta" style="margin-top:4px;">Outbound &middot; inbound &middot; customer-success, one view</div>
   </div>
   <div class="meta">Snapshot generated <span class="mono">__GENERATED_AT__</span> &middot; refresh with <code class="mono">python3 pipeline/crm.py dashboard</code></div>
 </header>
