@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Keena Growth Ops",
-  description: "A weekly, real-data healthcare sales pipeline for Keena Health, sourced from the CMS NPI Registry.",
+  description: "A weekly, real-data healthcare sales pipeline for Keena Health, sourced from open RFPs and job postings.",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",

@@ -13,7 +13,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
-    "leads:refresh": "tsx scripts/weekly-refresh.ts"
+    "leads:ingest": "tsx scripts/ingest-candidates.ts"
   },
   "dependencies": {
     "class-variance-authority": "0.7.1",

@@ -3,13 +3,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowUpRight,
   Bot,
-  BriefcaseBusiness,
+  Calendar,
   Check,
   Clock3,
-  Database,
   Download,
+  ExternalLink,
   Filter,
   Flame,
+  FileSearch,
   Inbox,
   LayoutDashboard,
   Loader2,
@@ -40,7 +41,7 @@ interface LeadsResponse {
   isoWeek: string;
   addedThisWeek: number;
   weeklyTarget: number;
-  lastRun: { runAt: string; added: number; queried: number; errors: string[] } | null;
+  lastRun: { runAt: string; added: number; candidatesReviewed: number } | null;
 }
 
 const stageLabel: Record<PipelineStage, string> = Object.fromEntries(
@@ -51,7 +52,7 @@ export default function Home() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [meta, setMeta] = useState<Omit<LeadsResponse, "leads"> | null>(null);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [checking, setChecking] = useState(false);
   const [filter, setFilter] = useState("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -70,6 +71,7 @@ export default function Home() {
       lastRun: data.lastRun,
     });
     setSelectedId((current) => current ?? data.leads[0]?.id ?? null);
+    return data;
   }, []);
 
   useEffect(() => {
@@ -85,10 +87,11 @@ export default function Home() {
     () =>
       thisWeekLeads.filter(
         (l) =>
-          (filter === "all" || l.discovery === filter) &&
+          (filter === "all" || l.sourceType === filter) &&
           (!highFitOnly || l.fit >= 85) &&
-          (l.company.toLowerCase().includes(query.toLowerCase()) ||
-            l.focus.toLowerCase().includes(query.toLowerCase()))
+          (l.organization.toLowerCase().includes(query.toLowerCase()) ||
+            l.serviceLine.toLowerCase().includes(query.toLowerCase()) ||
+            l.title.toLowerCase().includes(query.toLowerCase()))
       ),
     [thisWeekLeads, filter, highFitOnly, query]
   );
@@ -105,8 +108,8 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected?.id]);
 
-  const signalCount = thisWeekLeads.filter((l) => l.discovery === "signal").length;
-  const prospectCount = thisWeekLeads.filter((l) => l.discovery === "prospect").length;
+  const rfpCount = thisWeekLeads.filter((l) => l.sourceType === "rfp").length;
+  const jobCount = thisWeekLeads.filter((l) => l.sourceType === "job_posting").length;
   const highFitCount = thisWeekLeads.filter((l) => l.fit >= 85).length;
   const activeCount = leads.filter((l) => l.stage !== "won" && l.stage !== "lost").length;
   const wonCount = leads.filter((l) => l.stage === "won").length;
@@ -114,7 +117,7 @@ export default function Home() {
   const patchLead = useCallback(
     async (id: string, patch: { stage?: PipelineStage; notes?: string }) => {
       setLeads((cur) => cur.map((l) => (l.id === id ? { ...l, ...patch } : l)));
-      const res = await fetch(`/api/leads/${id}`, {
+      const res = await fetch(`/api/leads/${encodeURIComponent(id)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),
@@ -138,42 +141,33 @@ export default function Home() {
     toast.success("Notes saved");
   };
 
-  const runRefresh = async () => {
-    setRefreshing(true);
-    toast.loading("Pulling this week's leads from the CMS NPI registry…", { id: "run" });
+  const checkForUpdates = async () => {
+    setChecking(true);
     try {
-      const res = await fetch("/api/leads/refresh", { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Refresh failed");
-      await loadLeads();
-      if (data.run.added === 0 && data.run.errors.length > 0) {
-        toast.error(`Refresh hit an error: ${data.run.errors[0]}`, { id: "run" });
-      } else if (data.run.added === 0) {
-        toast.success("Already at this week's target — no new leads to add", { id: "run" });
-      } else {
-        toast.success(`Added ${data.run.added} new lead${data.run.added === 1 ? "" : "s"}`, {
-          id: "run",
-        });
-      }
-    } catch (err) {
-      toast.error(`Couldn't reach the data feed: ${(err as Error).message}`, { id: "run" });
+      const data = await loadLeads();
+      toast.success(
+        data.lastRun
+          ? `Pipeline current as of ${new Date(data.lastRun.runAt).toLocaleString()}`
+          : "No search run has landed yet"
+      );
     } finally {
-      setRefreshing(false);
+      setChecking(false);
     }
   };
 
   const exportCsv = () => {
     const rows = [
-      ["Company", "City", "State", "Discovery", "Fit", "Signal", "Keena service", "Stage"],
+      ["Organization", "Type", "Fit", "Service line", "Title", "Location", "Deadline", "Stage", "URL"],
       ...visible.map((l) => [
-        l.company,
-        l.city,
-        l.state,
-        l.discovery,
+        l.organization,
+        l.sourceType === "rfp" ? "RFP" : "Job posting",
         String(l.fit),
-        l.signal,
-        l.focus,
+        l.serviceLine,
+        l.title,
+        l.location,
+        l.deadline ?? "",
         stageLabel[l.stage],
+        l.url,
       ]),
     ];
     const csv = rows
@@ -191,7 +185,7 @@ export default function Home() {
   const copyBrief = async () => {
     if (!selected) return;
     await navigator.clipboard.writeText(
-      `${selected.company} (${selected.city}, ${selected.state})\nNPI ${selected.npiNumber}\nFit: ${selected.fit}/100\nSignal: ${selected.signal}\nKeena fit: ${selected.focus}\n\n${noteDraft}`
+      `${selected.organization}\n${selected.title}\n${selected.url}\nFit: ${selected.fit}/100\nSignal: ${selected.signal}\nKeena fit: ${selected.serviceLine}\n\n${noteDraft}`
     );
     toast.success("Lead brief copied");
   };
@@ -236,20 +230,18 @@ export default function Home() {
       <main className="shell">
         <section className="intro">
           <div>
-            <p className="eyebrow">
-              {meta?.isoWeek ?? "…"} · LIVE FEED — CMS NPI REGISTRY
-            </p>
+            <p className="eyebrow">{meta?.isoWeek ?? "…"} · REAL RFPS &amp; JOB POSTINGS</p>
             <h1>Your weekly growth briefing</h1>
-            <p>Up to 15 real healthcare provider leads a week, sourced and scored automatically.</p>
+            <p>Up to 15 real open RFPs and job postings a week, matched to Keena&apos;s service lines.</p>
           </div>
           <div className="intro-actions">
             <Button variant="outline" onClick={exportCsv}>
               <Download />
               Export CSV
             </Button>
-            <Button className="run-button" onClick={runRefresh} disabled={refreshing}>
-              {refreshing ? <Loader2 className="animate-spin" /> : <RefreshCcw />}
-              {refreshing ? "Refreshing…" : "Refresh this week"}
+            <Button className="run-button" onClick={checkForUpdates} disabled={checking}>
+              {checking ? <Loader2 className="animate-spin" /> : <RefreshCcw />}
+              {checking ? "Checking…" : "Check for updates"}
             </Button>
           </div>
         </section>
@@ -281,11 +273,11 @@ export default function Home() {
               <Inbox />
             </div>
             <div>
-              <span>Signal / prospect</span>
+              <span>RFPs / job postings</span>
               <strong>
-                {signalCount} <em>/</em> {prospectCount}
+                {rfpCount} <em>/</em> {jobCount}
               </strong>
-              <small>Recent activity vs. ICP match</small>
+              <small>Open procurement vs. hiring signal</small>
             </div>
           </article>
           <article>
@@ -304,7 +296,7 @@ export default function Home() {
             <div className="panel-head">
               <div>
                 <h2>This week&apos;s lead queue</h2>
-                <p>Ranked by fit, real-world signal, and taxonomy match</p>
+                <p>Ranked by fit, recency, and signal strength</p>
               </div>
               <div className="queue-actions">
                 <label className="searchbox">
@@ -324,15 +316,15 @@ export default function Home() {
             <Tabs value={filter} onValueChange={setFilter} className="lead-tabs">
               <TabsList>
                 <TabsTrigger value="all">All {thisWeekLeads.length}</TabsTrigger>
-                <TabsTrigger value="signal">Signal {signalCount}</TabsTrigger>
-                <TabsTrigger value="prospect">Prospect {prospectCount}</TabsTrigger>
+                <TabsTrigger value="rfp">RFPs {rfpCount}</TabsTrigger>
+                <TabsTrigger value="job_posting">Jobs {jobCount}</TabsTrigger>
               </TabsList>
             </Tabs>
             <Table className="lead-table">
               <TableHeader>
                 <TableRow>
-                  <TableHead>ACCOUNT</TableHead>
-                  <TableHead>DISCOVERY</TableHead>
+                  <TableHead>ORGANIZATION</TableHead>
+                  <TableHead>TYPE</TableHead>
                   <TableHead>FIT</TableHead>
                   <TableHead>WHY NOW</TableHead>
                   <TableHead />
@@ -353,16 +345,14 @@ export default function Home() {
                       <div className="account">
                         <span className="company-avatar">{l.initials}</span>
                         <div>
-                          <strong>{l.company}</strong>
-                          <span>
-                            {l.city ? `${l.city}, ${l.state}` : l.location}
-                          </span>
+                          <strong>{l.organization}</strong>
+                          <span>{l.title}</span>
                         </div>
                       </div>
                     </TableCell>
                     <TableCell>
-                      <span className={`source ${l.discovery === "signal" ? "inbound" : "outbound"}`}>
-                        {l.discovery === "signal" ? "Signal" : "Prospect"}
+                      <span className={`source ${l.sourceType === "rfp" ? "inbound" : "outbound"}`}>
+                        {l.sourceType === "rfp" ? "RFP" : "Job"}
                       </span>
                     </TableCell>
                     <TableCell>
@@ -374,7 +364,7 @@ export default function Home() {
                     <TableCell>
                       <div className="signal">
                         <strong>{l.signal}</strong>
-                        <span>{l.focus}</span>
+                        <span>{l.serviceLine}</span>
                       </div>
                     </TableCell>
                     <TableCell>
@@ -402,7 +392,7 @@ export default function Home() {
                 <strong>No leads match</strong>
                 <span>
                   {thisWeekLeads.length === 0
-                    ? "No leads yet this week — click Refresh this week to pull real data."
+                    ? "No leads yet this week — the weekly search run hasn't landed yet."
                     : "Clear the search or high-fit filter."}
                 </span>
               </div>
@@ -424,10 +414,8 @@ export default function Home() {
                 <div className="detail-company">
                   <span className="company-avatar large">{selected.initials}</span>
                   <div>
-                    <h2>{selected.company}</h2>
-                    <p>
-                      {selected.city ? `${selected.city}, ${selected.state}` : selected.location} · NPI {selected.npiNumber}
-                    </p>
+                    <h2>{selected.organization}</h2>
+                    <p>{selected.title}</p>
                   </div>
                 </div>
                 <div className="score-block">
@@ -443,9 +431,10 @@ export default function Home() {
                 <div className="brief-section">
                   <h3>Why this account, why now</h3>
                   <p>
-                    {selected.company} is a real CMS-registered provider organization matching{" "}
-                    <strong>{selected.focus}</strong>. Matched taxonomy: {selected.matchedTaxonomy}.
-                    Signal: <strong>{selected.signal.toLowerCase()}</strong>.
+                    {selected.sourceType === "rfp" ? "An open RFP" : "An open job requisition"} at{" "}
+                    {selected.organization} matches <strong>{selected.serviceLine}</strong>. Matched on:
+                    &ldquo;{selected.matchedKeyword}&rdquo;. {selected.signal}
+                    {selected.postedDate && ` Posted ${selected.postedDate}.`}
                   </p>
                 </div>
                 <div className="brief-section">
@@ -463,14 +452,16 @@ export default function Home() {
                   </div>
                 </div>
                 <div className="brief-section">
-                  <h3>Source record</h3>
-                  <div className="buyer-card">
-                    <BriefcaseBusiness />
+                  <h3>Source</h3>
+                  <a className="buyer-card" href={selected.url} target="_blank" rel="noreferrer">
+                    {selected.sourceType === "rfp" ? <FileSearch /> : <Calendar />}
                     <div>
-                      <strong>CMS NPI Registry</strong>
-                      <span>Public organizational NPI record #{selected.npiNumber}</span>
+                      <strong>{selected.sourceType === "rfp" ? "View the RFP notice" : "View the job posting"}</strong>
+                      <span className="source-link">
+                        {selected.url} <ExternalLink size={11} />
+                      </span>
                     </div>
-                  </div>
+                  </a>
                 </div>
                 <div className="brief-section">
                   <h3>Research notes</h3>
@@ -504,10 +495,10 @@ export default function Home() {
           <div className="agent-heading">
             <div>
               <p className="eyebrow">HOW THIS FEED WORKS</p>
-              <h2>A real data feed, not a demo.</h2>
+              <h2>Real RFPs and job postings, found by search.</h2>
             </div>
             <p>
-              <Database />
+              <Sparkles />
               Last run: {meta?.lastRun ? new Date(meta.lastRun.runAt).toLocaleString() : "never"}
             </p>
           </div>
@@ -522,18 +513,32 @@ export default function Home() {
                   {meta?.addedThisWeek ?? 0}/{meta?.weeklyTarget ?? 15} added this week
                 </span>
               </div>
-              <h3>Weekly cadence</h3>
-              <p>A scheduled job tops the pipeline up to 15 new leads every week and never repeats a lead.</p>
+              <h3>Weekly search run</h3>
+              <p>
+                A scheduled Claude session searches the web for open RFPs and job postings matching Keena&apos;s
+                service lines, then tops the pipeline up to 15 new leads — never repeating a URL already in the
+                pipeline, and never surfacing an RFP whose deadline has passed.
+              </p>
             </article>
             <article>
               <div className="agent-top">
                 <span className="agent-icon">
-                  <Database />
+                  <FileSearch />
                 </span>
-                <span className="agent-status">Live</span>
+                <span className="agent-status">RFPs</span>
               </div>
-              <h3>CMS NPI Registry</h3>
-              <p>Official, free, public U.S. government registry of real healthcare provider organizations.</p>
+              <h3>Open procurement</h3>
+              <p>Real solicitation notices from government and health-system procurement pages, with a live link.</p>
+            </article>
+            <article>
+              <div className="agent-top">
+                <span className="agent-icon">
+                  <Bot />
+                </span>
+                <span className="agent-status">Jobs</span>
+              </div>
+              <h3>Hiring signal</h3>
+              <p>Real job postings (EHR, HL7/interoperability, Epic, clinical informatics) as a buying-intent proxy.</p>
             </article>
             <article>
               <div className="agent-top">
@@ -542,18 +547,8 @@ export default function Home() {
                 </span>
                 <span className="agent-status">Scored</span>
               </div>
-              <h3>ICP taxonomy match</h3>
-              <p>Each org&apos;s registered taxonomy is matched to a Keena service line for a fit score.</p>
-            </article>
-            <article>
-              <div className="agent-top">
-                <span className="agent-icon">
-                  <Flame />
-                </span>
-                <span className="agent-status">Signal</span>
-              </div>
-              <h3>Recency signal</h3>
-              <p>Recently registered or updated NPI records surface first as timelier signal leads.</p>
+              <h3>Keyword ICP match</h3>
+              <p>Every posting is matched to a real Keena service line and scored by fit, type, and recency.</p>
             </article>
           </div>
         </section>

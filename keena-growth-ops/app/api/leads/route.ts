@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { isoWeekKey } from "@/lib/scoring";
 import { leadsAddedThisWeek, loadPipeline } from "@/lib/store";
-import { WEEKLY_LEAD_TARGET } from "@/lib/leadgen";
+import { WEEKLY_LEAD_TARGET } from "@/lib/ingest";
 
 export const runtime = "nodejs";
 

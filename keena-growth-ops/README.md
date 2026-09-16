@@ -1,106 +1,98 @@
 # Keena Growth Ops
 
-A weekly, real-data sales pipeline for Keena Health. It surfaces up to
-**15 real healthcare provider leads a week**, scored against Keena's
-service lines, and tracks each one through a sales pipeline (New →
-Contacted → Qualified → Meeting booked → Proposal sent → Won/Lost).
+A weekly, real-data sales pipeline for **Keena Healthcare Technology**
+(keenahealth.com — EHR conversions, KeenaArchive, InteleFiler, clinical
+consulting, and more). It surfaces up to **15 real open RFPs and job
+postings a week**, matched to Keena's actual service lines, and tracks
+each one through a sales pipeline (New → Contacted → Qualified → Meeting
+booked → Proposal sent → Won/Lost).
 
 This started from a chat-exported UI mockup (hardcoded array of 15 fake
 leads, a fake "run search" button that just waited 1.4s, `localStorage`
-for state). Everything here replaces that with a real, working pipeline:
-a real external data source, a real weekly cadence, and server-side
-persistence.
+for state). It first went through a version sourced from the CMS NPI
+Registry; this version replaces that with **real open RFPs and job
+postings** — a stronger, more direct buying-intent signal, per an explicit
+ask to source leads that way instead.
 
-## The real data feed
+## The real data feed — and why it looks different from a typical API integration
 
-Every lead is a real organization pulled from the **CMS NPI Registry**
-(`https://npiregistry.cms.hhs.gov`) — the official, free, keyless U.S.
-government API of registered healthcare providers. No fabricated
-companies, no paid lead-gen API key required.
+Every lead is a real RFP or job posting with a live source link — no
+fabricated companies. But unlike the earlier NPI-based version, this data
+can't be fetched by the app's own server on a schedule the way a plain API
+call can: there is no free, unified, keyless API for "search all open
+healthcare RFPs and job postings on the internet." The two real options
+were a paid aggregator/lead-gen API (Apollo, ZoomInfo, GovTribe, HigherGov,
+Adzuna, ...) or general web search — and web search is a tool available to
+an interactive Claude session, not something a deployed Next.js server can
+call itself.
 
-- `lib/npi.ts` — the registry client (organizational/`NPI-2` records only).
-- `lib/keena-icp.ts` — maps NUCC provider taxonomies (e.g. "General Acute
-  Care Hospital", "Health Care System") to a Keena service line
-  (EHR Conversions, Epic Consulting, Interoperability, ...) with a base
-  fit score.
-- `lib/scoring.ts` — turns one NPI record into a scored `Lead`. Records
-  updated or newly enumerated in the registry recently are labeled
-  **Signal** leads (something changed) and get a fit boost; everything
-  else that still matches the ICP is a **Prospect** lead.
-- `lib/leadgen.ts` — orchestrates a weekly run: queries a rotating subset
-  of taxonomies (so coverage varies week to week), scores every result,
-  never re-adds an NPI number already in the pipeline, and tops the
-  current ISO week up to 15 new leads.
-- `lib/store.ts` — a small JSON-file-backed pipeline store
-  (`data/pipeline.json`). Every lead ever added is kept, tagged with the
-  ISO week it was added in and its current pipeline stage.
+So the pipeline is split into two halves:
 
-### Known limitation — verify live network access once
+1. **Agentic discovery (not code).** A Claude session runs a defined set of
+   web searches every week, extracts real candidates (organization, title,
+   URL, dates), and writes them as JSON. The exact procedure — including
+   the actual search queries — is in **[`WEEKLY_SEARCH_RUNBOOK.md`](./WEEKLY_SEARCH_RUNBOOK.md)**.
+2. **Deterministic ingestion (real, tested code).** `lib/ingest.ts` takes
+   that JSON and does everything that can be tested without a network call:
+   matches each candidate's text against Keena's real service lines
+   (`lib/keena-icp.ts`), scores it, excludes any RFP whose deadline has
+   already passed (search results are a stale index and this happens
+   constantly — verified by hand while building this: RFPs from IEHP,
+   Sonoma County, and a VA RFI all turned up in search already closed),
+   dedupes against every URL ever added to the pipeline, and tops the
+   current ISO week up to 15 new leads.
 
-This file was written in a sandbox whose organization egress policy
-blocks outbound requests to `npiregistry.cms.hhs.gov` (confirmed via a
-direct `curl`, and again via the app's own `/api/leads/refresh`, which
-recorded a real `403 Forbidden` from the proxy for every taxonomy query).
-The client is covered by unit tests with mocked `fetch` responses
-(`tests/npi.test.ts`, `tests/leadgen.test.ts`) matching the NPI Registry
-API v2.1 response shape, but it has **not yet been exercised against a
-live response**. Run `npm run leads:refresh` once from an environment
-with real network access (or trigger the GitHub Action manually) before
-relying on the weekly schedule — the same discipline this repo's
-crypto-research code applies to its own market-data fetch in
-`../README.md`.
+`scripts/ingest-candidates.ts` is the CLI entry point:
+`npm run leads:ingest -- path/to/candidates.json`. `lib/store.ts` persists
+the result to `data/pipeline.json`.
+
+### Why this split matters for trust
+
+Everything past step 1 is unit-tested with fixed input (`tests/*.test.ts`,
+zero network calls, zero mocking needed — plain functions over plain data).
+What *isn't* mechanically testable is whether a given week's web search
+actually found the best real leads — that depends on judgment, same as a
+human SDR researching accounts. The runbook is written to make that
+judgment as consistent and low-risk as possible (verify deadlines, only
+count named organizations, never scrape a site whose ToS forbids it).
 
 ## Weekly cadence
 
-- `npm run leads:refresh` (`scripts/weekly-refresh.ts`) runs the same
-  orchestration outside the web server — commit-friendly for CI.
-- `.github/workflows/keena-weekly-leads.yml` runs it every Monday and
-  commits `data/pipeline.json` if it changed. Trigger it manually from
-  the Actions tab (`workflow_dispatch`) to seed the pipeline immediately.
-- The "Refresh this week" button in the UI calls `POST /api/leads/refresh`
-  directly from the running server, for an on-demand top-up.
+A scheduled Claude session (a Routine) follows `WEEKLY_SEARCH_RUNBOOK.md`
+end to end: search, extract, ingest, commit `data/pipeline.json`, push. See
+that file for the exact steps if you want to run a refresh by hand instead
+of waiting for the schedule.
 
 `data/pipeline.json` starts empty (`{"leads": [], "runs": []}`) — zero
-leads is the correct starting point until the feed has actually been run
-once with network access, not a bug.
+leads is the correct starting point until a search run has actually
+happened, not a bug.
 
 ## Persistence model — and its own limitation
 
-`lib/store.ts` reads/writes `data/pipeline.json` on local disk. That's a
-deliberate, simple choice for a single self-hosted Node process (a VM,
-container, or `next start` on a normal server with persistent disk) or
-for the GitHub-Actions-commits-the-data-file flow above. It is **not**
-safe on a stateless serverless platform (Vercel, Cloudflare Workers,
-etc.) where the filesystem resets between invocations — swap `lib/store.ts`
-for a real database there (the module's surface is intentionally tiny:
-`loadPipeline`/`savePipeline`/`updateLead`) before deploying to one.
-
-## Swapping in a paid data provider later
-
-If Keena later has an Apollo/Clearbit/ZoomInfo/Cognism API key, the swap
-point is `lib/leadgen.ts` + `lib/npi.ts`: replace the NPI query with that
-provider's client, keep returning the same shape `lib/scoring.ts` expects
-(or adjust `scoreNpiRecord` accordingly), and the store, API routes, and
-UI don't need to change.
+`lib/store.ts` reads/writes `data/pipeline.json` on local disk. That's fine
+for a single self-hosted Node process or for the commit-the-data-file flow
+above, but **not** safe on a stateless serverless platform (Vercel,
+Cloudflare Workers) where the filesystem resets between invocations — swap
+`lib/store.ts` for a real database there. The module's surface is
+intentionally tiny (`loadPipeline`/`savePipeline`/`updateLead`) to make
+that swap contained.
 
 ## What's what
 
 ```
+WEEKLY_SEARCH_RUNBOOK.md      the exact weekly procedure a Claude session follows
 app/
-  page.tsx              the pipeline UI: weekly queue, lead brief drawer,
-                         pipeline-stage chips, CSV export, live refresh
+  page.tsx                      pipeline UI: weekly queue, lead brief drawer with a
+                                 live source link, pipeline-stage chips, CSV export
   api/leads/route.ts             GET  — current pipeline + weekly stats
-  api/leads/refresh/route.ts     POST — real fetch from the NPI Registry
   api/leads/[id]/route.ts        PATCH — update a lead's stage/notes
 lib/
-  npi.ts        real NPI Registry API client
-  keena-icp.ts  taxonomy -> Keena service line fit map
-  scoring.ts    NPI record -> scored Lead
-  leadgen.ts    weekly orchestration (rotation, dedupe, 15/week cap)
+  scoring.ts    RawCandidate -> scored Lead (keyword match, expiry check, recency)
+  keena-icp.ts  keyword -> real Keena service line map
+  ingest.ts     weekly orchestration (dedupe by URL, 15/week cap, persistence)
   store.ts      JSON-file pipeline persistence
-scripts/weekly-refresh.ts    standalone weekly entry point (npm run leads:refresh)
-tests/                        mocked-fetch unit tests (no network, no cost)
-.github/workflows/keena-weekly-leads.yml   scheduled weekly refresh + commit
+scripts/ingest-candidates.ts   CLI: npm run leads:ingest -- candidates.json
+tests/                          pure-function unit tests, no network, no mocking
 ```
 
 ## Run it
@@ -108,7 +100,7 @@ tests/                        mocked-fetch unit tests (no network, no cost)
 ```
 npm install
 npm run dev              # http://localhost:3000
-npm test                 # mocked unit tests, no network
-npm run leads:refresh    # real fetch — needs outbound network to npiregistry.cms.hhs.gov
+npm test                 # unit tests, no network
+npm run leads:ingest -- scripts/candidates.json   # after following the runbook
 npm run build && npm start
 ```

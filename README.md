@@ -91,6 +91,6 @@ apparent edge survive realistic volatility, fees, and slippage? Not before.
 ## Other projects in this repo
 
 `keena-growth-ops/` is an unrelated Next.js app: a weekly, real-data
-healthcare sales pipeline (15 leads/week from the CMS NPI Registry). It
-does not share code or data with the crypto research above — see
-`keena-growth-ops/README.md` for its own docs.
+healthcare sales pipeline (up to 15 leads/week, sourced from real open
+RFPs and job postings). It does not share code or data with the crypto
+research above — see `keena-growth-ops/README.md` for its own docs.

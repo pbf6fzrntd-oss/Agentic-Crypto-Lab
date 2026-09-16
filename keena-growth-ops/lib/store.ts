@@ -2,40 +2,38 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Lead, PipelineStage } from "./scoring";
 
-export interface RefreshRun {
+export interface IngestRun {
   runAt: string;
   isoWeek: string;
+  candidatesReviewed: number;
   added: number;
-  queried: number;
-  errors: string[];
+  skippedDuplicate: number;
+  skippedOutOfIcp: number;
+  skippedExpired: number;
+  skippedOverTarget: number;
 }
 
 export interface PipelineData {
   leads: Lead[];
-  runs: RefreshRun[];
+  runs: IngestRun[];
 }
 
-// Read lazily (not cached at module load) so tests can point different
-// runs at different temp files via KEENA_DATA_FILE within the same process.
-function dataFile(): string {
+function defaultDataFile(): string {
   return process.env.KEENA_DATA_FILE ?? path.join(process.cwd(), "data", "pipeline.json");
 }
 
-const EMPTY: PipelineData = { leads: [], runs: [] };
-
-export async function loadPipeline(): Promise<PipelineData> {
+export async function loadPipeline(file: string = defaultDataFile()): Promise<PipelineData> {
   try {
-    const raw = await readFile(dataFile(), "utf8");
+    const raw = await readFile(file, "utf8");
     const parsed = JSON.parse(raw) as PipelineData;
     return { leads: parsed.leads ?? [], runs: parsed.runs ?? [] };
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return { ...EMPTY };
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return { leads: [], runs: [] };
     throw err;
   }
 }
 
-export async function savePipeline(data: PipelineData): Promise<void> {
-  const file = dataFile();
+export async function savePipeline(data: PipelineData, file: string = defaultDataFile()): Promise<void> {
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(file, JSON.stringify(data, null, 2) + "\n", "utf8");
 }
@@ -46,13 +44,14 @@ export function leadsAddedThisWeek(data: PipelineData, isoWeek: string): number 
 
 export async function updateLead(
   id: string,
-  patch: Partial<Pick<Lead, "stage" | "notes">>
+  patch: Partial<Pick<Lead, "stage" | "notes">>,
+  file: string = defaultDataFile()
 ): Promise<Lead | null> {
-  const data = await loadPipeline();
+  const data = await loadPipeline(file);
   const lead = data.leads.find((l) => l.id === id);
   if (!lead) return null;
   if (patch.stage !== undefined) lead.stage = patch.stage as PipelineStage;
   if (patch.notes !== undefined) lead.notes = patch.notes;
-  await savePipeline(data);
+  await savePipeline(data, file);
   return lead;
 }
