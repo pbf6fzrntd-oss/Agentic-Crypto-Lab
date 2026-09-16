@@ -75,7 +75,12 @@ export async function queryNpiOrganizations(query: NpiQuery): Promise<NpiResult[
 
   const url = `${NPI_API_BASE}?${params.toString()}`;
   const res = await fetch(url, {
-    headers: { Accept: "application/json" },
+    headers: {
+      Accept: "application/json",
+      // Public, keyless government API with no auth — a descriptive UA is
+      // just good etiquette, not a requirement.
+      "User-Agent": "keena-growth-ops/1.0 (+https://github.com/pbf6fzrntd-oss/agentic-crypto-lab)",
+    },
   });
   if (!res.ok) {
     throw new Error(`NPI Registry API returned ${res.status} ${res.statusText} for ${url}`);
