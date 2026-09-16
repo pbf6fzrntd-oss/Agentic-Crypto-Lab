@@ -78,6 +78,8 @@
   .stat-tile .stripe { position: absolute; inset: 0 auto 0 0; width: 4px; }
   .stat-tile .num { font-family: 'Inter', sans-serif; font-size: 30px; font-weight: 800; font-variant-numeric: tabular-nums; }
   .stat-tile .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-3); font-weight: 600; }
+  .stat-tile.is-zero .stripe { opacity: 0.35; }
+  .stat-tile.is-zero .num { color: var(--ink-3); font-weight: 700; }
 
   section { margin-bottom: 28px; }
   section > h2 {
@@ -138,6 +140,22 @@
   td.company-cell { font-weight: 600; }
   td .sub { color: var(--ink-3); font-size: 12px; }
   td.mono-cell { color: var(--ink-2); }
+  .when-hint { font-weight: 600; }
+  .when-hint.overdue { color: var(--accent-soft); }
+
+  .company-lockup { display: flex; align-items: flex-start; gap: 10px; }
+  .avatar {
+    flex-shrink: 0; width: 26px; height: 26px; border-radius: 7px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; color: var(--accent-ink);
+  }
+  .company-name-wrap { display: inline-flex; align-items: center; gap: 5px; }
+  .note-flag {
+    flex-shrink: 0; width: 13px; height: 13px; border-radius: 50%;
+    border: 1px solid var(--ink-3); color: var(--ink-3);
+    font-size: 9px; line-height: 11px; text-align: center; cursor: help;
+    font-weight: 700; font-style: normal;
+  }
 
   .pill {
     display: inline-block; padding: 2px 9px; border-radius: 6px;
@@ -227,14 +245,30 @@
   statOrder.forEach(function (key) {
     var label = statLabels[key] || key;
     var stageKey = key === "__lost__" ? "lost" : STAGE_KEY[key];
+    var count = counts[key] || 0;
     var tile = document.createElement("div");
-    tile.className = "stat-tile";
+    tile.className = "stat-tile" + (count === 0 ? " is-zero" : "");
     tile.innerHTML =
       '<span class="stripe" style="background:var(--stage-' + stageKey + '-fg)"></span>' +
-      '<span class="num">' + (counts[key] || 0) + '</span>' +
+      '<span class="num">' + count + '</span>' +
       '<span class="label">' + esc(label) + '</span>';
     statGrid.appendChild(tile);
   });
+
+  // ---- avatar color (deterministic hash into a fixed, on-brand set) ----
+  var AVATAR_HUES = [
+    { bg: "#312C63", fg: "#B8B4FF" }, // violet
+    { bg: "#1E3A52", fg: "#7DD3FC" }, // sky
+    { bg: "#1E3A28", fg: "#4ADE80" }, // emerald
+    { bg: "#402B18", fg: "#F5B968" }, // amber
+    { bg: "#3A1E3E", fg: "#E39CF0" }, // magenta
+    { bg: "#2C3440", fg: "#9CB4CC" }  // slate
+  ];
+  function avatarStyle(name) {
+    var hash = 0;
+    for (var i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+    return AVATAR_HUES[hash % AVATAR_HUES.length];
+  }
 
   // ---- due list ----
   var due = DATA.filter(function (r) {
@@ -327,13 +361,31 @@
 
     var tbody = '<tbody>' + rows.map(function (r) {
       var stageKey = STAGE_KEY[r.stage] || "prospecting";
+      var av = avatarStyle(r.company || "?");
+      var initial = (r.company || "?").trim().charAt(0).toUpperCase();
+      var noteFlag = r.notes ? '<span class="note-flag" title="' + esc(r.notes) + '">i</span>' : '';
+
+      var whenHint = "";
+      if (r.next_action_date) {
+        // daysBetween = today - target: positive means overdue, negative means still upcoming.
+        var d = daysBetween(r.next_action_date);
+        var label = d > 0 ? d + "d overdue" : d === 0 ? "today" : "in " + (-d) + "d";
+        whenHint = '<span class="when-hint' + (d >= 0 ? ' overdue' : '') + '">' + esc(label) + '</span>';
+      }
+
       return '<tr>' +
-        '<td class="company-cell">' + esc(r.company) + (r.persona_role ? '<div class="sub">' + esc(r.persona_role) + '</div>' : '') + '</td>' +
+        '<td class="company-cell">' +
+          '<div class="company-lockup">' +
+            '<span class="avatar" style="background:' + av.bg + ';color:' + av.fg + '">' + esc(initial) + '</span>' +
+            '<div><span class="company-name-wrap">' + esc(r.company) + noteFlag + '</span>' +
+            (r.persona_role ? '<div class="sub">' + esc(r.persona_role) + '</div>' : '') + '</div>' +
+          '</div>' +
+        '</td>' +
         '<td>' + esc(r.contact_name) + (r.contact_email ? '<div class="sub">' + esc(r.contact_email) + '</div>' : '') + '</td>' +
         '<td><span class="pill" style="background:var(--stage-' + stageKey + '-bg);color:var(--stage-' + stageKey + '-fg)">' + esc(r.stage || "—") + '</span></td>' +
         '<td>' + esc(r.source || "—") + '</td>' +
         '<td class="mono-cell mono">' + esc(r.last_touch_date || "—") + '</td>' +
-        '<td>' + esc(r.next_action || "—") + (r.next_action_date ? '<div class="sub mono">' + esc(r.next_action_date) + '</div>' : '') + '</td>' +
+        '<td>' + esc(r.next_action || "—") + (r.next_action_date ? '<div class="sub mono">' + esc(r.next_action_date) + ' &middot; ' + whenHint + '</div>' : '') + '</td>' +
         '<td>' + esc(r.owner_agent || "—") + '</td>' +
         '<td class="mono-cell mono">' + esc(r.draft_path || "—") + '</td>' +
         '</tr>';
