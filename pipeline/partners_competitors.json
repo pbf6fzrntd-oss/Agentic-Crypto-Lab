@@ -23,6 +23,42 @@
       "url": "https://monid.ai",
       "one_liner": "\"OpenRouter for agent tools\" — routes calls across 1,700+ third-party tools it doesn't own. Adjacent, not head-to-head: relevant only when a prospect wants many existing tools, not to host their own API.",
       "battlecard": "battlecards/monid.md"
+    },
+    {
+      "name": "Manufact",
+      "url": "https://manufact.com",
+      "one_liner": "Rebrand of the open-source mcp-use SDK + cloud hosting/testing/publishing ($6.3M seed, YC S25). Like Smithery: hosts servers you write — Shredly converts your existing API/DB with no code.",
+      "battlecard": "battlecards/manufact.md"
+    },
+    {
+      "name": "PandaStack",
+      "url": "https://pandastack.ai",
+      "one_liner": "Git-push MCP hosting in Firecracker microVMs with scale-to-zero — for servers you've already written, not an API/DB auto-converter. Consumption-based pricing, no flat tiers found.",
+      "battlecard": "battlecards/pandastack.md"
+    },
+    {
+      "name": "mcphosting.io",
+      "url": "https://mcphosting.io",
+      "one_liner": "Free serverless hosting for Python/Node MCP servers you've already written, via GitHub. Thin on docs and production-readiness signals; still requires your own server code.",
+      "battlecard": "battlecards/mcphosting-io.md"
+    },
+    {
+      "name": "Cloudflare Workers",
+      "url": "https://developers.cloudflare.com/agents/model-context-protocol/",
+      "one_liner": "The concrete face of \"general PaaS\" for MCP — real first-party tooling (OAuth library, McpAgent, hosted playground), but you still write and wire up the server yourself. Free tier undercuts Shredly's at low volume.",
+      "battlecard": "battlecards/cloudflare-workers.md"
+    },
+    {
+      "name": "Zapier MCP",
+      "url": "https://zapier.com/mcp",
+      "one_liner": "No-code gateway to 9,000+ existing app integrations, billed from Zapier's task pool. Adjacent, not a substitute — no dedicated MCP server generated from your own API.",
+      "battlecard": "battlecards/zapier-mcp.md"
+    },
+    {
+      "name": "Klavis AI",
+      "url": "https://klavis.ai",
+      "one_liner": "MCP integration gateway (Strata) across 100+ prebuilt third-party connectors, open-source and self-hostable. Adjacent — no feature for hosting your own proprietary API as MCP.",
+      "battlecard": "battlecards/klavis-ai.md"
     }
   ],
   "partners": [
