@@ -19,5 +19,8 @@ Auto-generated from `pipeline/contacts.csv` by `python3 pipeline/crm.py snapshot
 | Corelayer | Mitch Radhuber | Prospecting | outbound | 2026-09-16 | Send follow-up touch 2 | 2026-09-21 | outbound-sdr | outreach/2026-09-16-corelayer.md |
 | OneCLI | Jonathan Fishner | Prospecting | outbound | 2026-09-16 | Send follow-up touch 2 | 2026-09-21 | outbound-sdr | outreach/2026-09-16-onecli.md |
 | Spaceflow | Ali Eren Aytekin | Prospecting | outbound | 2026-09-16 | Send follow-up touch 2 | 2026-09-21 | outbound-sdr | outreach/2026-09-16-spaceflow.md |
+| Cortea | Valentin Neumann | Prospecting | outbound | 2026-09-17 | Send follow-up touch 2 | 2026-09-22 | outbound-sdr | outreach/2026-09-17-cortea.md |
+| Interloom | Fabian Jakobi | Prospecting | outbound | 2026-09-17 | Send follow-up touch 2 | 2026-09-22 | outbound-sdr | outreach/2026-09-17-interloom.md |
+| Zalos | Hung Hoang | Prospecting | outbound | 2026-09-17 | Send follow-up touch 2 | 2026-09-22 | outbound-sdr | outreach/2026-09-17-zalos.md |
 | Cognee | Unconfirmed (founder - to verify on LinkedIn) |  | outbound | 2026-09-16 | Send follow-up touch 2 | 2026-09-21 | outbound-sdr | outreach/2026-09-16-cognee.md |
 | Keenable | Andrey Styskin |  | outbound | 2026-09-16 | Send follow-up touch 2 | 2026-09-21 | outbound-sdr | outreach/2026-09-16-keenable.md |
