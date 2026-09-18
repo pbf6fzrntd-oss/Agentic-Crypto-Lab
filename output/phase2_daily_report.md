@@ -1,11 +1,11 @@
-# Phase 2 Daily Report — 2026-09-17 08:05 UTC
+# Phase 2 Daily Report — 2026-09-18 08:06 UTC
 
 **This is a research status report, not investment advice.** Phase 2 is paper trading only — no real orders are ever placed. See `RESEARCH_SPEC.md` for the full methodology and the falsification bar this project is bound by.
 
 ## Headline
 
-- Real decisions logged: **99** (BUY: 10, HOLD: 89)
-- Completed outcomes: **0**  |  Still pending: **99**
+- Real decisions logged: **118** (BUY: 10, HOLD: 108)
+- Completed outcomes: **0**  |  Still pending: **118**
 - Currently open positions: **10** (100.0% of notional)
 
 ## Reading this report
