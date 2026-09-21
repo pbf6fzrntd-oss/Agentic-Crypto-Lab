@@ -25,5 +25,8 @@ Auto-generated from `pipeline/contacts.csv` by `python3 pipeline/crm.py snapshot
 | Keith | Sam Tucker | Prospecting | outbound | 2026-09-18 | Send follow-up touch 2 | 2026-09-23 | outbound-sdr | outreach/2026-09-18-keith.md |
 | Runable | Umesh Kumar | Prospecting | outbound | 2026-09-18 | Send follow-up touch 2 | 2026-09-23 | outbound-sdr | outreach/2026-09-18-runable.md |
 | Weave | Adam Cohen | Prospecting | outbound | 2026-09-18 | Send follow-up touch 2 | 2026-09-23 | outbound-sdr | outreach/2026-09-18-weave.md |
+| Salus | Vedant Singh | Prospecting | outbound | 2026-09-21 | Send follow-up touch 2 | 2026-09-26 | outbound-sdr | outreach/2026-09-21-salus.md |
+| Terminal Use | Stavros Filosidis | Prospecting | outbound | 2026-09-21 | Send follow-up touch 2 | 2026-09-26 | outbound-sdr | outreach/2026-09-21-terminal-use.md |
+| AIR Security | Yair Saban | Prospecting | outbound | 2026-09-21 | Send follow-up touch 2 | 2026-09-26 | outbound-sdr | outreach/2026-09-21-air-security.md |
 | Cognee | Unconfirmed (founder - to verify on LinkedIn) |  | outbound | 2026-09-16 | Send follow-up touch 2 | 2026-09-21 | outbound-sdr | outreach/2026-09-16-cognee.md |
 | Keenable | Andrey Styskin |  | outbound | 2026-09-16 | Send follow-up touch 2 | 2026-09-21 | outbound-sdr | outreach/2026-09-16-keenable.md |
