@@ -1,26 +1,26 @@
-# Phase 2 Daily Report — 2026-09-21 08:10 UTC
+# Phase 2 Daily Report — 2026-09-22 08:10 UTC
 
 **This is a research status report, not investment advice.** Phase 2 is paper trading only — no real orders are ever placed. See `RESEARCH_SPEC.md` for the full methodology and the falsification bar this project is bound by.
 
 ## Headline
 
-- Real decisions logged: **167** (BUY: 12, HOLD: 155)
-- Completed outcomes: **9**  |  Still pending: **158**
-- Currently open positions: **3** (30.0% of notional)
+- Real decisions logged: **185** (BUY: 19, HOLD: 166)
+- Completed outcomes: **10**  |  Still pending: **175**
+- Currently open positions: **9** (90.0% of notional)
 
 ## Reading this report
 
-**Only 9 real outcome(s) have completed (threshold for a read: 30).** RESEARCH_SPEC.md is explicit that a handful of trades is not enough to say anything statistically meaningful about the workflow's real quality. The numbers below are shown for transparency and to track the pipeline is running correctly — not as a signal of edge or no edge either way. Zero or few completed outcomes this early is the expected, correct state, not a problem.
+**Only 10 real outcome(s) have completed (threshold for a read: 30).** RESEARCH_SPEC.md is explicit that a handful of trades is not enough to say anything statistically meaningful about the workflow's real quality. The numbers below are shown for transparency and to track the pipeline is running correctly — not as a signal of edge or no edge either way. Zero or few completed outcomes this early is the expected, correct state, not a problem.
 
 ## Overall performance (completed trades only)
 
 | Metric | Value |
 |---|---|
-| Win rate (net-of-cost return > 0) | +77.78% |
-| Mean stock return | +15.14% |
-| Mean benchmark return | +18.67% |
-| Mean excess return (vs. benchmark) | -3.52% |
-| Mean net-of-cost return | +14.84% |
+| Win rate (net-of-cost return > 0) | +80.00% |
+| Mean stock return | +19.99% |
+| Mean benchmark return | +18.19% |
+| Mean excess return (vs. benchmark) | +1.80% |
+| Mean net-of-cost return | +19.69% |
 
 ## Per-ticker (completed trades only)
 
@@ -30,7 +30,7 @@
 | ICP-USD | 1 | +100.00% | +3.40% |
 | LINK-USD | 1 | +100.00% | +6.88% |
 | LTC-USD | 1 | +100.00% | +7.64% |
-| NEAR-USD | 1 | +100.00% | +43.38% |
+| NEAR-USD | 2 | +100.00% | +53.33% |
 | SOL-USD | 1 | +100.00% | +7.93% |
 | TRX-USD | 1 | +0.00% | -0.31% |
 | UNI7083-USD | 1 | +100.00% | +29.73% |
