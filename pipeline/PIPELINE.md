@@ -30,5 +30,7 @@ Auto-generated from `pipeline/contacts.csv` by `python3 pipeline/crm.py snapshot
 | AIR Security | Yair Saban | Prospecting | outbound | 2026-09-21 | Send follow-up touch 2 | 2026-09-26 | outbound-sdr | outreach/2026-09-21-air-security.md |
 | Clarion | Jeffrey Lamothe | Prospecting | outbound | 2026-09-22 | Send follow-up touch 2 | 2026-09-27 | outbound-sdr | outreach/2026-09-22-clarion.md |
 | Bolna | Prateek Sachan | Prospecting | outbound | 2026-09-22 | Send follow-up touch 2 | 2026-09-27 | outbound-sdr | outreach/2026-09-22-bolna.md |
+| Fiber AI | Adi Agashe | Prospecting | outbound | 2026-09-23 | Send follow-up touch 2 | 2026-09-28 | outbound-sdr | outreach/2026-09-23-fiber-ai.md |
+| Dex | Paddy Lambros | Prospecting | outbound | 2026-09-23 | Send follow-up touch 2 | 2026-09-28 | outbound-sdr | outreach/2026-09-23-dex.md |
 | Cognee | Unconfirmed (founder - to verify on LinkedIn) |  | outbound | 2026-09-16 | Send follow-up touch 2 | 2026-09-21 | outbound-sdr | outreach/2026-09-16-cognee.md |
 | Keenable | Andrey Styskin |  | outbound | 2026-09-16 | Send follow-up touch 2 | 2026-09-21 | outbound-sdr | outreach/2026-09-16-keenable.md |
