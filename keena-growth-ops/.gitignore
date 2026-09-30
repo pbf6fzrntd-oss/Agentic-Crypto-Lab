@@ -6,3 +6,8 @@ dist/
 *.tsbuildinfo
 .env*.local
 scripts/candidates.json
+
+.local/
+.demo/
+*.sqlite
+*.sqlite-*

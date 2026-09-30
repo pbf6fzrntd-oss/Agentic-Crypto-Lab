@@ -1,0 +1,13 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
+import {ingestCandidates} from '../lib/ingest';
+import {loadPipeline,updateLead} from '../lib/store';
+import {accessAllowed,mutationAllowed} from '../lib/auth';
+const candidate={sourceType:'rfp' as const,organization:'Fictional clinic',title:'Example',text:'electronic health record conversion',url:'https://example.invalid/rfp'};
+async function temp(fn:(file:string)=>Promise<void>){const dir=await mkdtemp(path.join(tmpdir(),'keena-recovery-'));try{await fn(path.join(dir,'pipeline.json'));}finally{await rm(dir,{recursive:true,force:true});}}
+test('concurrent disjoint edits survive and stale same-version writes fail',()=>temp(async file=>{await ingestCandidates([candidate],new Date(),file);await Promise.all([updateLead(candidate.url,{stage:'qualified'},file),updateLead(candidate.url,{notes:'Checked with owner'},file)]);let lead=(await loadPipeline(file)).leads[0];assert.equal(lead.stage,'qualified');assert.equal(lead.notes,'Checked with owner');await updateLead(lead.id,{owner:'Example operator'},file,lead.version);await assert.rejects(()=>updateLead(lead.id,{notes:'stale'},file,lead.version),/stale_version/);lead=(await loadPipeline(file)).leads[0];assert.equal(lead.notes,'Checked with owner');}));
+test('refresh dedupes tracking URL and retains sales work',()=>temp(async file=>{const now=new Date();await ingestCandidates([candidate],now,file);await updateLead(candidate.url,{stage:'qualified',notes:'Evidence reviewed',owner:'Operator'},file);const checkedAt=now.toISOString();const refreshed=await ingestCandidates([{...candidate,url:candidate.url+'?utm_source=demo#top',checkedAt}],now,file);assert.equal(refreshed.run.added,0);const lead=(await loadPipeline(file)).leads[0];assert.equal(lead.checkedAt,checkedAt);assert.equal(lead.stage,'qualified');assert.equal(lead.notes,'Evidence reviewed');assert.equal(lead.owner,'Operator');}));
+test('private read/write authorization denies missing or wrong credentials',async()=>{const key='k'.repeat(24);assert.equal(await accessAllowed(new Request('https://example.invalid/api/leads'),key,false),false);assert.equal(await accessAllowed(new Request('https://example.invalid/api/leads',{headers:{authorization:'Basic '+btoa('keena:wrong')}}),key,false),false);assert.equal(await accessAllowed(new Request('https://example.invalid/api/leads',{headers:{authorization:'Basic '+btoa('keena:'+key)}}),key,false),true);assert.equal(mutationAllowed(new Request('https://example.invalid/api/leads',{headers:{origin:'https://evil.invalid'}})),false);});
