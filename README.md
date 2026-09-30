@@ -171,3 +171,7 @@ python3 -m src.run_historical_validation   # "Phase 1.5" — real 12mo data, stu
 Only after enough Phase 2 outcomes exist to say something statistically
 meaningful, check the falsification bar from `RESEARCH_SPEC.md`: does any
 apparent edge survive realistic volatility, fees, and slippage? Not before.
+
+## Versioned research demonstration
+
+The canonical historical experiment lives on `claude/tender-maxwell-jxsuo3`; other branches contain separate ventures. Run `python -m research_v2.demo` for a deterministic read-only cockpit with separately labeled historical rows. [Version 2 methodology and release notes](docs/SNAPSHOT_V2.md) explain corrected chronology, transactional deduplication, fixed benchmark lineage, and the remaining live-input integration gate. This does not change or retune the frozen experiment.
