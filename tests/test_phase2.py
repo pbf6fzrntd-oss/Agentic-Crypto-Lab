@@ -98,6 +98,13 @@ class TestFetchOhlcvYfinance(unittest.TestCase):
 
 class TestFormThesisLlm(unittest.TestCase):
     def setUp(self):
+        # Mocked tests use a placeholder; guard against any unmocked client.
+        credential_patcher = patch.dict(os.environ, {"ANTHROPIC_KEY_FOR_TRADING": "unit-test-placeholder"})
+        credential_patcher.start()
+        self.addCleanup(credential_patcher.stop)
+        client_guard = patch("anthropic.Anthropic", side_effect=AssertionError("Unmocked provider client in unit test"))
+        client_guard.start()
+        self.addCleanup(client_guard.stop)
         # form_thesis_llm logs every call's cost to CONFIG.cost_log_path
         # (src/cost_tracking.py) -- point that at a temp file for every
         # test in this class so tests never write into the real repo's
@@ -113,6 +120,13 @@ class TestFormThesisLlm(unittest.TestCase):
     def tearDown(self):
         self.config_patcher.stop()
         self.tmpdir.cleanup()
+
+    def test_missing_credential_fails_before_client_creation(self):
+        hist = generate_synthetic_ohlcv("BTC-USD", n_bars=80, seed=1)
+        with patch.dict(os.environ, {}, clear=True), patch("anthropic.Anthropic") as client:
+            with self.assertRaisesRegex(RuntimeError, "environment variable is not set"):
+                form_thesis_llm("BTC-USD", hist)
+        client.assert_not_called()
 
     def test_insufficient_history_returns_flat_without_calling_api(self):
         hist = generate_synthetic_ohlcv("BTC-USD", n_bars=MIN_BARS_FOR_LLM_THESIS - 1, seed=1)
