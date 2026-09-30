@@ -38,6 +38,7 @@ export interface RawCandidate {
   location?: string;
   /** ISO date the RFP/job was posted or issued, if known. */
   postedDate?: string;
+  checkedAt?: string;
   /** ISO date an RFP's response window closes, if known. Irrelevant for job postings. */
   deadline?: string;
 }
@@ -60,6 +61,9 @@ export interface Lead {
   addedAt: string;
   stage: PipelineStage;
   notes: string;
+  owner?: string;
+  checkedAt?: string;
+  version?: number;
 }
 
 function initialsFor(name: string): string {
@@ -81,6 +85,9 @@ function daysBetween(a: Date, b: Date): number {
 export function scoreCandidate(candidate: RawCandidate, isoWeek: string, now: Date): Lead | null {
   if (!candidate.organization?.trim() || !candidate.url?.trim()) return null;
 
+  if (!["rfp","job_posting"].includes(candidate.sourceType) || typeof candidate.title !== "string" || typeof candidate.text !== "string") throw Error("Invalid candidate");
+  for (const date of [candidate.postedDate,candidate.deadline,candidate.checkedAt]) if (date && Number.isNaN(Date.parse(date))) throw Error("Invalid source date");
+  if (candidate.checkedAt && Date.parse(candidate.checkedAt) > now.getTime()) throw Error("Source check is in the future");
   const match = bestServiceLineMatch(candidate.text);
   if (!match) return null;
 
@@ -100,7 +107,7 @@ export function scoreCandidate(candidate: RawCandidate, isoWeek: string, now: Da
       ? `Open RFP, responses due ${candidate.deadline}`
       : "Open RFP";
   } else {
-    signal = "Open job requisition";
+    signal = "Job posting: service-fit hypothesis; procurement budget unverified";
   }
 
   if (candidate.postedDate) {
@@ -131,6 +138,7 @@ export function scoreCandidate(candidate: RawCandidate, isoWeek: string, now: Da
     addedAt: now.toISOString(),
     stage: "new",
     notes: "",
+    owner: "Unassigned", checkedAt: candidate.checkedAt, version: 0,
   };
 }
 

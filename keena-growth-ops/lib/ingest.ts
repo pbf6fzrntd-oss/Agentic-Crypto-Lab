@@ -1,5 +1,5 @@
 import { isoWeekKey, scoreCandidate, type Lead, type RawCandidate } from "./scoring";
-import { leadsAddedThisWeek, loadPipeline, savePipeline, type IngestRun } from "./store";
+import { leadsAddedThisWeek, mutatePipeline, type IngestRun } from "./store";
 
 export const WEEKLY_LEAD_TARGET = 15;
 
@@ -22,8 +22,8 @@ export async function ingestCandidates(
   file?: string
 ): Promise<IngestResult> {
   const isoWeek = isoWeekKey(now);
-  const data = await loadPipeline(file);
-  const seenUrls = new Set(data.leads.map((l) => l.url));
+  return mutatePipeline((data) => {
+  const seenUrls = new Set(data.leads.map((l) => canonicalUrl(l.url)));
   const alreadyThisWeek = leadsAddedThisWeek(data, isoWeek);
   const remaining = Math.max(0, WEEKLY_LEAD_TARGET - alreadyThisWeek);
 
@@ -32,8 +32,11 @@ export async function ingestCandidates(
   let skippedExpired = 0;
   const scored: Lead[] = [];
 
-  for (const candidate of candidates) {
+  for (let candidate of candidates) {
+    candidate = { ...candidate, url: canonicalUrl(candidate.url) };
     if (seenUrls.has(candidate.url)) {
+      const existing = data.leads.find(l => canonicalUrl(l.url) === candidate.url);
+      if (existing && candidate.checkedAt && !Number.isNaN(Date.parse(candidate.checkedAt))) { existing.checkedAt = candidate.checkedAt; existing.version = (existing.version ?? 0) + 1; }
       skippedDuplicate++;
       continue;
     }
@@ -68,11 +71,14 @@ export async function ingestCandidates(
     skippedOverTarget,
   };
   data.runs.push(run);
-  await savePipeline(data, file);
+
 
   return {
     run,
     addedLeads: toAdd,
     totalLeadsThisWeek: alreadyThisWeek + toAdd.length,
   };
+  }, file);
 }
+
+export function canonicalUrl(value: string): string { const url = new URL(value); if (!["https:", "http:"].includes(url.protocol) || url.username || url.password) throw Error("Invalid source URL"); url.hash=""; for(const name of [...url.searchParams.keys()]) if(name.startsWith("utm_") || ["fbclid","gclid"].includes(name)) url.searchParams.delete(name); url.searchParams.sort(); return url.toString().replace(/\/$/, ""); }

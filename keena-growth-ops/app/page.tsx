@@ -38,6 +38,7 @@ import { PIPELINE_STAGES, type Lead, type PipelineStage } from "@/lib/scoring";
 
 interface LeadsResponse {
   leads: Lead[];
+  mode: "example" | "pilot";
   isoWeek: string;
   addedThisWeek: number;
   weeklyTarget: number;
@@ -62,9 +63,11 @@ export default function Home() {
 
   const loadLeads = useCallback(async () => {
     const res = await fetch("/api/leads", { cache: "no-store" });
+    if (!res.ok) throw new Error("Pipeline unavailable; retry after checking access and database.");
     const data = (await res.json()) as LeadsResponse;
     setLeads(data.leads);
     setMeta({
+      mode: data.mode,
       isoWeek: data.isoWeek,
       addedThisWeek: data.addedThisWeek,
       weeklyTarget: data.weeklyTarget,
@@ -75,7 +78,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    loadLeads().finally(() => setLoading(false));
+    loadLeads().catch(e => toast.error(e.message)).finally(() => setLoading(false));
   }, [loadLeads]);
 
   const thisWeekLeads = useMemo(
@@ -115,30 +118,27 @@ export default function Home() {
   const wonCount = leads.filter((l) => l.stage === "won").length;
 
   const patchLead = useCallback(
-    async (id: string, patch: { stage?: PipelineStage; notes?: string }) => {
-      setLeads((cur) => cur.map((l) => (l.id === id ? { ...l, ...patch } : l)));
-      const res = await fetch(`/api/leads/${encodeURIComponent(id)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
-      });
-      if (!res.ok) {
-        toast.error("Couldn't save that change");
-        await loadLeads();
-      }
+    async (id: string, patch: { stage?: PipelineStage; notes?: string; owner?: string }) => {
+      try {
+        const current = leads.find(l => l.id === id);
+        const res = await fetch(`/api/leads/${encodeURIComponent(id)}`, {method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({...patch,version:current?.version??0})});
+        if (!res.ok) throw new Error((await res.json()).error || "Save failed");
+        const {lead}=await res.json(); setLeads(cur=>cur.map(l=>l.id===id?lead:l)); toast.success("Change saved");
+      } catch(error) {toast.error(error instanceof Error?error.message:"Save failed"); await loadLeads().catch(()=>{});}
+
     },
-    [loadLeads]
+    [loadLeads, leads]
   );
 
   const setStage = (id: string, stage: PipelineStage) => {
     patchLead(id, { stage });
-    toast.success(`Moved to "${stageLabel[stage]}"`);
+
   };
 
   const saveNotes = () => {
     if (!selected) return;
     patchLead(selected.id, { notes: noteDraft });
-    toast.success("Notes saved");
+
   };
 
   const checkForUpdates = async () => {
@@ -150,15 +150,16 @@ export default function Home() {
           ? `Pipeline current as of ${new Date(data.lastRun.runAt).toLocaleString()}`
           : "No search run has landed yet"
       );
-    } finally {
+    } catch(error) { toast.error(error instanceof Error ? error.message : "Refresh failed"); } finally {
       setChecking(false);
     }
   };
 
-  const exportCsv = () => {
+  const exportCsv = async () => {
+    let saved: LeadsResponse; try { saved = await loadLeads(); } catch { toast.error("Cannot export unsaved/unavailable data."); return; }
     const rows = [
-      ["Organization", "Type", "Fit", "Service line", "Title", "Location", "Deadline", "Stage", "URL"],
-      ...visible.map((l) => [
+      ["Organization", "Type", "Fit", "Service line", "Title", "Location", "Deadline", "Stage", "URL", "Notes", "Owner", "Checked at"],
+      ...saved.leads.map((l) => [
         l.organization,
         l.sourceType === "rfp" ? "RFP" : "Job posting",
         String(l.fit),
@@ -167,11 +168,11 @@ export default function Home() {
         l.location,
         l.deadline ?? "",
         stageLabel[l.stage],
-        l.url,
+        l.url, l.notes, l.owner ?? "Unassigned", l.checkedAt ?? "Unverified",
       ]),
     ];
     const csv = rows
-      .map((r) => r.map((v) => `"${v.replaceAll('"', '""')}"`).join(","))
+      .map((r) => r.map((v) => `"${(/^[=+@-]/.test(v) ? "'" + v : v).replaceAll('"', '""')}"`).join(","))
       .join("\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
     const a = document.createElement("a");
@@ -185,13 +186,14 @@ export default function Home() {
   const copyBrief = async () => {
     if (!selected) return;
     await navigator.clipboard.writeText(
-      `${selected.organization}\n${selected.title}\n${selected.url}\nFit: ${selected.fit}/100\nSignal: ${selected.signal}\nKeena fit: ${selected.serviceLine}\n\n${noteDraft}`
+      `${selected.organization}\n${selected.title}\n${selected.url}\nFit: ${selected.fit}/100\nSignal: ${selected.signal} · Checked: {selected.checkedAt ?? "Unverified"} · {(!selected.checkedAt || Date.now()-Date.parse(selected.checkedAt)>7*86400000) ? "Source review overdue" : "Recently checked"} · {selected.deadline && Date.parse(selected.deadline)<Date.now() ? "EXPIRED — do not pursue" : "Verify source before pursuing"}\nKeena fit: ${selected.serviceLine}\n\n${noteDraft}`
     );
     toast.success("Lead brief copied");
   };
 
   return (
     <div className="min-h-screen bg-[#f5f6f7] text-[#222]">
+      <div role="status" className="p-3">{meta?.mode === "example" ? "Fictional demo queue — no real procurement or customer evidence." : "Private pilot — supervised source review; job postings are fit hypotheses, not confirmed buying intent."}</div>
       <Toaster position="top-right" richColors />
       <header className="topbar">
         <div className="brand-lockup" aria-label="Keena Growth Operations">
@@ -433,7 +435,7 @@ export default function Home() {
                   <p>
                     {selected.sourceType === "rfp" ? "An open RFP" : "An open job requisition"} at{" "}
                     {selected.organization} matches <strong>{selected.serviceLine}</strong>. Matched on:
-                    &ldquo;{selected.matchedKeyword}&rdquo;. {selected.signal}
+                    &ldquo;{selected.matchedKeyword}&rdquo;. {selected.signal} · Checked: {selected.checkedAt ?? "Unverified"} · {(!selected.checkedAt || Date.now()-Date.parse(selected.checkedAt)>7*86400000) ? "Source review overdue" : "Recently checked"} · {selected.deadline && Date.parse(selected.deadline)<Date.now() ? "EXPIRED — do not pursue" : "Verify source before pursuing"}
                     {selected.postedDate && ` Posted ${selected.postedDate}.`}
                   </p>
                 </div>
@@ -453,6 +455,7 @@ export default function Home() {
                 </div>
                 <div className="brief-section">
                   <h3>Source</h3>
+                  <label>Follow-up owner <input key={selected.id} defaultValue={selected.owner ?? "Unassigned"} maxLength={120} onBlur={e => { if (e.target.value !== selected.owner) patchLead(selected.id, {owner:e.target.value}); }} /></label>
                   <a className="buyer-card" href={selected.url} target="_blank" rel="noreferrer">
                     {selected.sourceType === "rfp" ? <FileSearch /> : <Calendar />}
                     <div>

@@ -1,0 +1,13 @@
+# Keena demo and private pilot
+
+Node 24 is required. `npm ci`; copy `.env.example` to `.env.local`; `npm run dev`. KEENA_DEMO=1 seeds an isolated `.demo/pipeline.json.sqlite` with fictional examples. Sources use example.invalid; no real opportunities or automated discovery are implied. Stop the app and remove `.demo` to reset. The demo queue is shared by visitors to that process; it is not tenant-isolated.
+
+For real data set KEENA_DEMO=0, a random KEENA_ACCESS_KEY of at least 24 characters, and KEENA_ORIGIN to the exact app origin. Browser HTTP Basic login uses username `keena` and the configured key as password. TLS is mandatory for deployment. The middleware and API handlers both enforce access. This is an internal shared-key pilot, not per-user identity. Restrict access at the reverse proxy and rotate the key when a team member leaves. Never put real records in demo mode.
+
+Each load/edit/ingestion uses a SQLite BEGIN IMMEDIATE transaction. Storage is `<KEENA_DATA_FILE>.sqlite`, default `.local/pipeline.json.sqlite`; any JSON at that configured path is imported only when SQLite is first created. The original JSON remains unchanged. For existing deployments, set KEENA_DATA_FILE to the old pipeline path for one-time import. Do not deploy on ephemeral/stateless storage. Keep one host with durable disk; stop writers for backup, copy SQLite and rehearse restore. Ingestion and edits must use this store; external JSON writers no longer update the active pipeline. Updates carry versions; concurrent stale changes return 409 and require reload.
+
+`npm run leads:ingest -- candidates.json` remains a supervised process. Ingestion normalizes tracking URL variants. Rechecking an existing candidate updates only source checked-at/version and preserves notes, owner, and stage. `checkedAt` is operator-attested, not an automatic link check. Missing checks and checks older than seven days show review overdue; expired leads remain visible with a warning for historical tracking. Job postings indicate a service-fit hypothesis, not confirmed procurement demand or budget. CSV exports reload the persisted whole queue and escape spreadsheet formulas.
+
+Rehearse: inspect a fictional RFP, inspect a job-fit caveat, advance stage, save notes, reload, export, and reset. Run `npm test`, `npm run lint`, `npm run typecheck`, `npm run build`. Before a real pilot, verify imported row counts, access denial, source URLs/deadlines, backup/restore, and assigned owners. Weekly target 15 is a cap, not a promise. Use meetings and accepted proposals to evaluate value.
+
+The application remains in its historical Crypto Lab branch; this PR preserves provenance. A dedicated Keena repository and deployment can be created from this folder separately.

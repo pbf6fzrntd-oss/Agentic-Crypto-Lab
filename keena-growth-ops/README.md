@@ -104,3 +104,7 @@ npm test                 # unit tests, no network
 npm run leads:ingest -- scripts/candidates.json   # after following the runbook
 npm run build && npm start
 ```
+
+## Current release
+
+Use Node 24. See [docs/RELEASE.md](docs/RELEASE.md) for the isolated fictional queue, private authentication, SQLite migration, source review, and backup/restore. Real data is no longer written to `data/pipeline.json` by default. The refresh button reloads the saved queue; it does not search the web.
