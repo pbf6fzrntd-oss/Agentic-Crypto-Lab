@@ -1,3 +1,5 @@
+> Current applications and release prerequisites: [Project index](PROJECTS.md). This default branch is an older Crypto snapshot; use the canonical branches listed there.
+
 # Agentic Crypto Trading Workflow
 
 Research infrastructure for the question defined in `RESEARCH_SPEC.md`:
